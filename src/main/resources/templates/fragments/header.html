@@ -2,11 +2,17 @@
 <html xmlns:th="http://www.thymeleaf.org">
 <body>
 <header th:fragment="header" class="site-header">
-  <div class="container py-3 d-flex justify-content-between align-items-center">
-    <a class="brand" th:href="@{/}">Site Plain</a>
-    <nav class="nav-links d-flex gap-3">
-      <a th:href="@{/about}">About</a>
-    </nav>
+  <div class="container">
+    <div class="site-masthead-inner">
+      <a class="brand text-decoration-none" th:href="@{/}">
+        <span class="brand-mark">Site Plain</span>
+        <span class="brand-sub">EPA Superfund sites near you, in plain language</span>
+      </a>
+      <nav class="site-nav" aria-label="Primary">
+        <a class="site-nav-link" th:href="@{/about}">About</a>
+        <a class="site-nav-button" th:href="@{/#feedback}">Feedback</a>
+      </nav>
+    </div>
   </div>
 </header>
 </body>

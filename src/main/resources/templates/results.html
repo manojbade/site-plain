@@ -15,9 +15,23 @@
   </div>
   <div th:if="${!viewModel.unresolved}">
     <header class="mb-4">
-      <p class="eyebrow mb-1">Lookup results</p>
-      <h1 class="h2 mb-2" th:text="${viewModel.normalizedAddress}">Resolved address</h1>
-      <p class="text-muted mb-0" th:text="${viewModel.resultCount} + ' active Superfund site(s) found within 3 miles'">0 active sites found</p>
+      <div class="d-flex align-items-start justify-content-between flex-wrap gap-2 mb-4">
+        <div>
+          <p class="eyebrow mb-1">Lookup results</p>
+          <h1 class="h2 mb-1" th:text="${viewModel.normalizedAddress}">Resolved address</h1>
+          <p class="text-muted mb-0" th:text="${viewModel.resultCount} + ' active Superfund site(s) found within 3 miles'">0 active sites found</p>
+        </div>
+        <div>
+          <input id="share-url" type="text" class="visually-hidden" value="" readonly>
+          <button class="site-nav-button" type="button" id="share-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="margin-right:0.35rem;vertical-align:-1px">
+              <path d="M18 8a3 3 0 1 0-2.82-4H15a3 3 0 0 0 .18 1.03L8.91 8.17a3 3 0 0 0-1.91-.67 3 3 0 1 0 1.91 5.33l6.27 3.14A3 3 0 0 0 15 17a3 3 0 1 0 .18 1.03l-6.27-3.14A3 3 0 0 0 9 12c0-.36-.06-.7-.18-1.03l6.27-3.14c.53.47 1.23.77 2.01.77Z"/>
+            </svg>
+            Share results
+          </button>
+          <span id="share-status" class="text-muted small ms-2" aria-live="polite"></span>
+        </div>
+      </div>
     </header>
 
     <div class="vstack gap-3" th:if="${viewModel.hasSites}">
@@ -53,5 +67,23 @@
   </div>
 </main>
 <div th:replace="fragments/footer :: footer"></div>
+<script>
+  (() => {
+    const btn = document.getElementById('share-btn');
+    const input = document.getElementById('share-url');
+    const status = document.getElementById('share-status');
+    if (!btn || !input) return;
+    input.value = window.location.href;
+    btn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(input.value);
+        status.textContent = 'Link copied!';
+        setTimeout(() => { status.textContent = ''; }, 2500);
+      } catch {
+        status.textContent = 'Copy failed - copy from the address bar';
+      }
+    });
+  })();
+</script>
 </body>
 </html>

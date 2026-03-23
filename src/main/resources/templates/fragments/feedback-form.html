@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org">
 <body>
-<form th:fragment="feedback-form(pageType, epaId)" method="post" action="/feedback" class="feedback-form card p-3 mt-4">
+<form th:fragment="feedback-form(pageType, epaId)" id="feedback" method="post" action="/feedback" class="feedback-form card p-4 mt-3">
   <p class="fw-semibold mb-2">Was this information helpful?</p>
   <input type="hidden" name="pageType" th:value="${pageType}"/>
   <input type="hidden" name="epaId" th:value="${epaId}"/>
