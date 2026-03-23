@@ -10,7 +10,9 @@
 <body>
 <div th:replace="fragments/header :: header"></div>
 <main class="container py-4">
-  <div th:if="${viewModel.unresolved}" th:replace="error/unresolved :: unresolved(${viewModel.inputAddress}, ${viewModel.normalizedAddress})"></div>
+  <div th:if="${viewModel.unresolved}">
+    <div th:replace="~{error/unresolved :: unresolved(${viewModel.inputAddress}, ${viewModel.normalizedAddress})}"></div>
+  </div>
   <div th:if="${!viewModel.unresolved}">
     <header class="mb-4">
       <p class="eyebrow mb-1">Lookup results</p>

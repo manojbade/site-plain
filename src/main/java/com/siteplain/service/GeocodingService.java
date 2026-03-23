@@ -29,15 +29,27 @@ public class GeocodingService {
     }
 
     public GeocodedAddress geocode(String rawAddress) {
-        GeocodedAddress census = geocodeWithCensus(rawAddress);
+        String address = stripCountrySuffix(rawAddress);
+        GeocodedAddress census = geocodeWithCensus(address);
         if (census != null) {
             return census;
         }
-        GeocodedAddress nominatim = geocodeWithNominatim(rawAddress);
+        GeocodedAddress nominatim = geocodeWithNominatim(address);
         if (nominatim != null) {
             return nominatim;
         }
         return GeocodedAddress.unresolved(rawAddress);
+    }
+
+    private String stripCountrySuffix(String address) {
+        if (address == null) return null;
+        String trimmed = address.trim();
+        for (String suffix : new String[]{", United States", ", United States of America", ", USA", ", US"}) {
+            if (trimmed.regionMatches(true, trimmed.length() - suffix.length(), suffix, 0, suffix.length())) {
+                return trimmed.substring(0, trimmed.length() - suffix.length()).trim();
+            }
+        }
+        return trimmed;
     }
 
     private GeocodedAddress geocodeWithCensus(String rawAddress) {

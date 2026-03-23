@@ -8,33 +8,300 @@
   <link rel="stylesheet" th:href="@{/css/site-plain.css}">
 </head>
 <body>
-<div th:replace="fragments/header :: header"></div>
+<div th:replace="~{fragments/header :: header}"></div>
 <main class="container py-5">
-  <section class="hero card shadow-sm p-4 p-md-5">
-    <p class="eyebrow mb-2">EPA Superfund Lookup</p>
-    <h1 class="display-5 mb-3">What’s on the EPA priority list near your home?</h1>
-    <p class="lead mb-4">
-      <span th:text="${viewModel.totalPopulationText}">19.46 million</span> Americans live within 1 mile of an active Superfund site.
-      <span th:text="${viewModel.totalDistrictsText}">357 of 435</span> congressional districts contain at least one active site.
-    </p>
-    <form method="post" th:action="@{/lookup}" th:object="${lookupForm}" class="row g-3">
-      <div class="col-12 col-md-9">
-        <input type="text" th:field="*{address}" class="form-control form-control-lg"
-               placeholder="Enter a home address">
+  <section class="tt-home-hero mb-4">
+    <div class="hero card shadow-sm p-4 p-md-5">
+      <p class="eyebrow mb-2">EPA Superfund Lookup</p>
+      <h1 class="display-5 mb-3">What's on the EPA priority list near your home?</h1>
+      <p class="lead hero-stat mb-4">
+        19.4 million Americans live within 1 mile of an active Superfund site.
+        357 of 435 congressional districts contain at least one.
+      </p>
+
+      <div class="tt-home-action-shell">
+        <form method="post"
+              th:action="@{/lookup}"
+              th:object="${lookupForm}"
+              class="row g-3 tt-primary-lookup-pane"
+              th:attr="data-mapbox-token=${mapboxPublicToken}">
+          <div class="col-12 col-md-9">
+            <div class="tt-address-field-shell">
+              <input type="text"
+                     th:field="*{address}"
+                     id="lookup-address"
+                     class="form-control form-control-lg tt-primary-input"
+                     placeholder="Enter a home address"
+                     autocomplete="off"
+                     aria-autocomplete="list"
+                     aria-expanded="false"
+                     aria-controls="lookup-address-suggestions">
+              <div id="lookup-address-suggestions"
+                   class="tt-address-suggestions d-none"
+                   role="listbox"
+                   aria-label="Address suggestions"></div>
+            </div>
+          </div>
+          <div class="col-12 col-md-3">
+            <button type="submit" class="btn btn-dark btn-lg w-100">Find nearby sites</button>
+          </div>
+          <div class="col-12 text-danger" th:if="${#fields.hasErrors('address')}" th:errors="*{address}"></div>
+        </form>
       </div>
-      <div class="col-12 col-md-3">
-        <button type="submit" class="btn btn-dark btn-lg w-100">Find nearby sites</button>
+
+      <p class="text-muted small mt-3 mb-0">
+        Data: EPA National Priorities List · Distance to boundary polygon, not centroid
+      </p>
+      <p class="text-muted small mt-2 mb-0" th:if="${viewModel.updatedDate != null}">
+        Updated <span th:text="${viewModel.updatedDate}">2026-03-23</span>
+      </p>
+    </div>
+  </section>
+
+  <section class="mb-4">
+    <div class="row g-4">
+      <div class="col-md-4">
+        <div class="tt-proof-card">
+          <div class="tt-proof-card-number">Use it for</div>
+          <h2>Finding Superfund sites near any address</h2>
+          <p class="tt-proof-copy">Enter a home address and see every active EPA National Priorities List site within 3 miles, ordered by distance to the actual boundary polygon.</p>
+        </div>
       </div>
-      <div class="col-12 text-danger" th:if="${#fields.hasErrors('address')}" th:errors="*{address}"></div>
-    </form>
-    <p class="text-muted small mt-3 mb-0">
-      Data: EPA National Priorities List
-      <span th:if="${viewModel.updatedDate != null}">
-        , updated <span th:text="${viewModel.updatedDate}">2026-03-23</span>
-      </span>
-    </p>
+      <div class="col-md-4">
+        <div class="tt-proof-card">
+          <div class="tt-proof-card-number">Use it for</div>
+          <h2>Understanding EPA exposure status in plain English</h2>
+          <p class="tt-proof-copy">Each result shows whether EPA has determined human exposure is under control at that site — with the official exposure pathway description when available.</p>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="tt-proof-card">
+          <div class="tt-proof-card-number">Use it for</div>
+          <h2>Checking before you buy, rent, or move</h2>
+          <p class="tt-proof-copy">A plain-English summary of publicly available federal data. No EPA login, no expert knowledge needed.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="mb-4">
+    <div class="tt-panel-card">
+      <p class="tt-card-kicker">How it works</p>
+      <h2 class="tt-card-title">From address to official site record in three steps.</h2>
+      <div class="row g-3 mt-1">
+        <div class="col-md-4">
+          <div class="tt-step-card">
+            <p class="tt-card-kicker mb-2">Step 1</p>
+            <h2>Enter an address</h2>
+            <p class="tt-step-copy">Geocoded via U.S. Census Geocoder with Nominatim fallback.</p>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="tt-step-card">
+            <p class="tt-card-kicker mb-2">Step 2</p>
+            <h2>Find sites within 3 miles</h2>
+            <p class="tt-step-copy">PostGIS spatial query against EPA NPL boundary polygons. Distance is to the boundary, not to a centroid.</p>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="tt-step-card">
+            <p class="tt-card-kicker mb-2">Step 3</p>
+            <h2>See the federal record</h2>
+            <p class="tt-step-copy">Human exposure status, exposure pathway description, and a direct link to the EPA site profile.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="mb-2">
+    <div class="tt-info-card">
+      <p class="tt-card-kicker">Trust and limits</p>
+      <h2 class="tt-card-title">Built from public federal data. Distance is not exposure.</h2>
+      <p class="tt-info-copy mb-3">
+        Proximity to a Superfund site boundary does not mean your property is contaminated. EPA boundaries show the cleanup area — not the full extent of contamination. Groundwater plumes can extend beyond site boundaries. This tool is not affiliated with or endorsed by EPA.
+      </p>
+      <div class="tt-source-strip border-0 mt-0 pt-0">
+        <span class="tt-source-chip">EPA National Priorities List</span>
+        <span class="tt-source-chip">EPA Human Exposure Site List</span>
+        <span class="tt-source-chip">U.S. Census Geocoder</span>
+      </div>
+    </div>
   </section>
 </main>
-<div th:replace="fragments/footer :: footer"></div>
+<div th:replace="~{fragments/footer :: footer}"></div>
+<script>
+  (() => {
+    const pane = document.querySelector('.tt-primary-lookup-pane[data-mapbox-token]');
+    const input = document.getElementById('lookup-address');
+    const suggestionPanel = document.getElementById('lookup-address-suggestions');
+    const token = pane?.dataset.mapboxToken?.trim();
+    if (!pane || !input || !suggestionPanel || !token) {
+      return;
+    }
+
+    let debounceHandle;
+    let abortController;
+    let activeIndex = -1;
+    let suggestions = [];
+
+    const sessionToken = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+            ? crypto.randomUUID()
+            : String(Date.now());
+
+    const clearSuggestions = () => {
+      suggestions = [];
+      activeIndex = -1;
+      suggestionPanel.innerHTML = '';
+      suggestionPanel.classList.add('d-none');
+      input.setAttribute('aria-expanded', 'false');
+    };
+
+    const suggestionLabel = (feature) =>
+            feature?.properties?.full_address
+            || feature?.place_formatted
+            || feature?.properties?.name
+            || feature?.name_preferred
+            || '';
+
+    const setActive = (nextIndex) => {
+      activeIndex = nextIndex;
+      Array.from(suggestionPanel.querySelectorAll('.tt-address-suggestion')).forEach((button, index) => {
+        button.classList.toggle('is-active', index === activeIndex);
+        button.setAttribute('aria-selected', index === activeIndex ? 'true' : 'false');
+      });
+    };
+
+    const applySuggestion = (feature) => {
+      const label = suggestionLabel(feature);
+      if (!label) {
+        return;
+      }
+      input.value = label;
+      clearSuggestions();
+    };
+
+    const renderSuggestions = (features) => {
+      suggestions = features.filter((feature) => suggestionLabel(feature));
+      suggestionPanel.innerHTML = '';
+      activeIndex = -1;
+
+      if (suggestions.length === 0) {
+        suggestionPanel.classList.add('d-none');
+        input.setAttribute('aria-expanded', 'false');
+        return;
+      }
+
+      suggestions.forEach((feature, index) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'tt-address-suggestion';
+        button.setAttribute('role', 'option');
+        button.setAttribute('aria-selected', 'false');
+        const text = document.createElement('span');
+        text.className = 'tt-address-suggestion-text';
+        text.textContent = suggestionLabel(feature);
+        button.appendChild(text);
+        button.addEventListener('mousedown', (event) => {
+          event.preventDefault();
+          applySuggestion(feature);
+        });
+        button.addEventListener('mouseenter', () => setActive(index));
+        suggestionPanel.appendChild(button);
+      });
+
+      suggestionPanel.classList.remove('d-none');
+      input.setAttribute('aria-expanded', 'true');
+    };
+
+    const fetchSuggestions = async (query) => {
+      if (abortController) {
+        abortController.abort();
+      }
+
+      abortController = new AbortController();
+
+      const params = new URLSearchParams({
+        q: query,
+        access_token: token,
+        autocomplete: 'true',
+        country: 'US',
+        types: 'address',
+        limit: '5',
+        session_token: sessionToken
+      });
+
+      const response = await fetch(`https://api.mapbox.com/search/geocode/v6/forward?${params.toString()}`, {
+        method: 'GET',
+        signal: abortController.signal
+      });
+
+      if (!response.ok) {
+        throw new Error(`Mapbox suggestion request failed: ${response.status}`);
+      }
+
+      const payload = await response.json();
+      renderSuggestions(Array.isArray(payload.features) ? payload.features : []);
+    };
+
+    input.addEventListener('input', () => {
+      const query = input.value.trim();
+      window.clearTimeout(debounceHandle);
+
+      if (query.length < 5) {
+        clearSuggestions();
+        return;
+      }
+
+      debounceHandle = window.setTimeout(async () => {
+        try {
+          await fetchSuggestions(query);
+        } catch (error) {
+          if (error.name !== 'AbortError') {
+            clearSuggestions();
+          }
+        }
+      }, 250);
+    });
+
+    input.addEventListener('keydown', (event) => {
+      if (suggestions.length === 0) {
+        return;
+      }
+
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setActive(activeIndex < suggestions.length - 1 ? activeIndex + 1 : 0);
+        return;
+      }
+
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setActive(activeIndex > 0 ? activeIndex - 1 : suggestions.length - 1);
+        return;
+      }
+
+      if (event.key === 'Enter' && activeIndex >= 0) {
+        event.preventDefault();
+        applySuggestion(suggestions[activeIndex]);
+        return;
+      }
+
+      if (event.key === 'Escape') {
+        clearSuggestions();
+      }
+    });
+
+    input.addEventListener('blur', () => {
+      window.setTimeout(clearSuggestions, 120);
+    });
+
+    document.addEventListener('click', (event) => {
+      if (!pane.contains(event.target)) {
+        clearSuggestions();
+      }
+    });
+  })();
+</script>
 </body>
 </html>
