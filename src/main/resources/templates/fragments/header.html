@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+<header th:fragment="header" class="site-header">
+  <div class="container py-3 d-flex justify-content-between align-items-center">
+    <a class="brand" th:href="@{/}">Site Plain</a>
+    <nav class="nav-links d-flex gap-3">
+      <a th:href="@{/about}">About</a>
+    </nav>
+  </div>
+</header>
+</body>
+</html>
