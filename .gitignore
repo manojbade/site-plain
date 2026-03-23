@@ -2,3 +2,5 @@ target/
 .DS_Store
 .idea/
 *.iml
+_docs/
+scripts/npl_site_boundaries.geojson

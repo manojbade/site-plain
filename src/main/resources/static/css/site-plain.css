@@ -16,7 +16,7 @@ body {
     radial-gradient(circle at top left, rgba(140, 106, 63, 0.14), transparent 30%),
     linear-gradient(180deg, #f7f2e9 0%, var(--site-bg) 100%);
   color: var(--site-ink);
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   min-height: 100vh;
 }
 

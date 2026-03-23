@@ -34,7 +34,7 @@
               </div>
               <p class="mb-0 text-muted" th:if="${site.exposurePathwayDescription != null and !#strings.isEmpty(site.exposurePathwayDescription)}">
                 About this site’s exposure pathways:
-                <span th:text="${site.exposurePathwayDescription}">EPA text</span>
+                <span th:utext="${site.exposurePathwayDescription}">EPA text</span>
               </p>
             </div>
             <a class="btn btn-outline-dark btn-sm" th:href="${site.effectiveEpaUrl()}" target="_blank" rel="noopener">View EPA site profile</a>
