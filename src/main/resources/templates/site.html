@@ -26,7 +26,7 @@
     </div>
     <p th:if="${viewModel.pageData.exposurePathwayDescription != null and !#strings.isEmpty(viewModel.pageData.exposurePathwayDescription)}">
       About this site’s exposure pathways:
-      <span th:text="${viewModel.pageData.exposurePathwayDescription}">EPA text</span>
+      <span th:utext="${viewModel.pageData.exposurePathwayDescription}">EPA text</span>
     </p>
     <form method="post" th:action="@{/lookup}" th:object="${lookupForm}" class="row g-3 mt-3">
       <div class="col-12">
