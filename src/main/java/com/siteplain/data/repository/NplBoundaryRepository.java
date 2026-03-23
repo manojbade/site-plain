@@ -64,10 +64,12 @@ public class NplBoundaryRepository {
     }
 
     public void swapStagingToLive() {
-        jdbcTemplate.update("TRUNCATE site_seo_page_cache");
-        jdbcTemplate.update("TRUNCATE state_page_cache");
-        jdbcTemplate.update("TRUNCATE npl_human_exposure");
-        jdbcTemplate.update("TRUNCATE npl_site_boundaries");
+        jdbcTemplate.update("""
+                TRUNCATE site_seo_page_cache,
+                         state_page_cache,
+                         npl_human_exposure,
+                         npl_site_boundaries
+                """);
         jdbcTemplate.update("""
                 INSERT INTO npl_site_boundaries (epa_id, site_name, state_code, npl_status_code, epa_url, geom, loaded_at)
                 SELECT epa_id, site_name, state_code, npl_status_code, epa_url, geom, loaded_at
@@ -87,7 +89,7 @@ public class NplBoundaryRepository {
                 SELECT max(loaded_at)::date AS loaded_date
                 FROM npl_site_boundaries
                 """, (rs, rowNum) -> rs.getObject("loaded_date", LocalDate.class));
-        return rows.stream().findFirst();
+        return rows.stream().filter(java.util.Objects::nonNull).findFirst();
     }
 
     public Optional<LocalDateTime> lastLoadedAt() {
