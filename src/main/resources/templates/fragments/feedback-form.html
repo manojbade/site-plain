@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+<form th:fragment="feedback-form(pageType, epaId)" method="post" action="/feedback" class="feedback-form card p-3 mt-4">
+  <p class="fw-semibold mb-2">Was this information helpful?</p>
+  <input type="hidden" name="pageType" th:value="${pageType}"/>
+  <input type="hidden" name="epaId" th:value="${epaId}"/>
+  <div class="d-flex gap-2 mb-3">
+    <button type="submit" class="btn btn-outline-dark btn-sm" name="helpful" value="true">Yes</button>
+    <button type="submit" class="btn btn-outline-dark btn-sm" name="helpful" value="false">No</button>
+  </div>
+  <textarea name="comments" class="form-control" rows="3" maxlength="500"
+            placeholder="What were you looking for? (optional)"></textarea>
+</form>
+</body>
+</html>

@@ -1,0 +1,9 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+<span th:fragment="badge(code, label)"
+      class="exposure-badge"
+      th:classappend="${T(com.siteplain.support.ExposureStatusMapper).badgeCssClass(code)}"
+      th:text="${label}">Exposure status</span>
+</body>
+</html>

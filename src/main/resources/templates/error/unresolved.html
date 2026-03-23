@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+<section th:fragment="unresolved(inputAddress, normalizedAddress)" class="card shadow-sm p-4">
+  <h1 class="h3 mb-3">Address could not be resolved</h1>
+  <p class="mb-2">The lookup could not geocode this address well enough to run the site search.</p>
+  <p class="text-muted mb-0" th:if="${inputAddress != null}">
+    Submitted address: <span th:text="${inputAddress}">Address</span>
+  </p>
+</section>
+</body>
+</html>
