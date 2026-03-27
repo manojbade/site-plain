@@ -3,9 +3,13 @@ package com.siteplain.data.repository;
 import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -101,6 +105,20 @@ public class NplBoundaryRepository {
             return timestamp == null ? null : timestamp.toLocalDateTime();
         });
         return rows.stream().filter(java.util.Objects::nonNull).findFirst();
+    }
+
+    public Map<String, String> findGeoJsonByIds(List<String> epaIds) {
+        if (epaIds == null || epaIds.isEmpty()) {
+            return Map.of();
+        }
+        String placeholders = epaIds.stream().map(id -> "?").collect(Collectors.joining(","));
+        Map<String, String> result = new LinkedHashMap<>();
+        jdbcTemplate.query(
+                "SELECT epa_id, ST_AsGeoJSON(geom) AS geojson FROM npl_site_boundaries WHERE epa_id IN (" + placeholders + ")",
+                (RowCallbackHandler) rs -> result.put(rs.getString("epa_id"), rs.getString("geojson")),
+                epaIds.toArray()
+        );
+        return result;
     }
 
     private int queryCount(String table) {

@@ -3,12 +3,16 @@ package com.siteplain.web.controller;
 import com.siteplain.data.repository.NplBoundaryRepository;
 import com.siteplain.domain.model.GeocodedAddress;
 import com.siteplain.domain.model.NplLookupResult;
+import com.siteplain.domain.model.NplSite;
 import com.siteplain.domain.view.ResultsViewModel;
 import com.siteplain.service.AuditService;
 import com.siteplain.service.GeocodingService;
 import com.siteplain.service.NplLookupService;
 import com.siteplain.web.form.AddressLookupForm;
 import jakarta.validation.Valid;
+import java.util.List;
+import java.util.Map;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
@@ -25,6 +29,9 @@ public class LookupController {
     private final NplLookupService nplLookupService;
     private final AuditService auditService;
     private final NplBoundaryRepository nplBoundaryRepository;
+
+    @Value("${MAPBOX_PUBLIC_TOKEN:}")
+    private String mapboxPublicToken;
 
     public LookupController(GeocodingService geocodingService,
                             NplLookupService nplLookupService,
@@ -77,12 +84,13 @@ public class LookupController {
                     true,
                     false,
                     0,
-                    java.util.List.of()
+                    List.of(),
+                    null, null, null, null
             ));
             return "results";
         }
         if (lat == null || lng == null || address == null) {
-            model.addAttribute("viewModel", new ResultsViewModel(null, null, true, false, 0, java.util.List.of()));
+            model.addAttribute("viewModel", new ResultsViewModel(null, null, true, false, 0, List.of(), null, null, null, null));
             return "results";
         }
         GeocodedAddress geocodedAddress = new GeocodedAddress(
@@ -98,14 +106,49 @@ public class LookupController {
         );
         NplLookupResult result = nplLookupService.findSitesNear(geocodedAddress);
         auditService.logLookup(geocodedAddress, result);
+
+        String siteBoundaryGeojson = null;
+        if (!result.sites().isEmpty()) {
+            List<String> epaIds = result.sites().stream().map(NplSite::getEpaId).toList();
+            Map<String, String> geomMap = nplBoundaryRepository.findGeoJsonByIds(epaIds);
+            siteBoundaryGeojson = buildFeatureCollection(result.sites(), geomMap);
+        }
+
         model.addAttribute("viewModel", new ResultsViewModel(
                 geocodedAddress.rawAddress(),
                 geocodedAddress.normalizedAddress(),
                 false,
                 !result.sites().isEmpty(),
                 result.sites().size(),
-                result.sites()
+                result.sites(),
+                mapboxPublicToken,
+                lat,
+                lng,
+                siteBoundaryGeojson
         ));
         return "results";
+    }
+
+    static String buildFeatureCollection(List<NplSite> sites, Map<String, String> geomMap) {
+        if (geomMap == null || geomMap.isEmpty()) {
+            return null;
+        }
+        StringBuilder fc = new StringBuilder("{\"type\":\"FeatureCollection\",\"features\":[");
+        boolean first = true;
+        for (NplSite site : sites) {
+            String geom = geomMap.get(site.getEpaId());
+            if (geom == null) continue;
+            if (!first) fc.append(",");
+            String color = site.getExposureStatusColor() != null ? site.getExposureStatusColor() : "gray";
+            String safeName = site.getSiteName() == null ? "" :
+                    site.getSiteName().replace("\\", "\\\\").replace("\"", "\\\"");
+            fc.append("{\"type\":\"Feature\",\"geometry\":").append(geom)
+              .append(",\"properties\":{\"epaId\":\"").append(site.getEpaId()).append("\"")
+              .append(",\"siteName\":\"").append(safeName).append("\"")
+              .append(",\"color\":\"").append(color).append("\"}}");
+            first = false;
+        }
+        fc.append("]}");
+        return fc.toString();
     }
 }

@@ -9,6 +9,10 @@ public record ResultsViewModel(
         boolean unresolved,
         boolean hasSites,
         int resultCount,
-        List<NplSite> sites
+        List<NplSite> sites,
+        String mapboxPublicToken,
+        Double userLat,
+        Double userLng,
+        String siteBoundaryGeojson
 ) {
 }

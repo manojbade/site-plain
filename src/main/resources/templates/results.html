@@ -13,6 +13,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Results | Site Plain</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link th:if="${viewModel.siteBoundaryGeojson != null}" href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet">
   <link rel="stylesheet" th:href="@{/css/site-plain.css}">
 </head>
 <body>
@@ -29,7 +30,8 @@
           <h1 class="h2 mb-1" th:text="${viewModel.normalizedAddress}">Resolved address</h1>
           <p class="text-muted mb-0" th:text="${viewModel.resultCount} + ' active Superfund site(s) found within 3 miles'">0 active sites found</p>
         </div>
-        <div>
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+          <a href="/" class="site-nav-button">&#8592; Check another address</a>
           <input id="share-url" type="text" class="visually-hidden" value="" readonly>
           <button class="site-nav-button" type="button" id="share-btn">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="margin-right:0.35rem;vertical-align:-1px">
@@ -37,44 +39,134 @@
             </svg>
             Share results
           </button>
-          <span id="share-status" class="text-muted small ms-2" aria-live="polite"></span>
+          <span id="share-status" class="text-muted small" aria-live="polite"></span>
         </div>
       </div>
     </header>
 
-    <div class="vstack gap-3" th:if="${viewModel.hasSites}">
-      <article class="card shadow-sm" th:each="site : ${viewModel.sites}">
-        <div class="card-body">
-          <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
-            <div>
-              <h2 class="h4 mb-2"><a th:href="@{/site/{epaId}(epaId=${site.epaId})}" th:text="${site.siteName}">Site name</a></h2>
-              <p class="mb-2"><strong>Distance:</strong>
-                <span th:text="${T(com.siteplain.support.DistanceFormatter).format(site.distanceMeters)}">0.4 miles</span>
-              </p>
-              <div class="mb-2">
-                <span th:replace="fragments/exposure-badge :: badge(${site.exposureStatusCode}, ${site.exposureStatusLabel})"></span>
-              </div>
-              <p class="mb-0 text-muted" th:if="${site.exposurePathwayDescription != null and !#strings.isEmpty(site.exposurePathwayDescription)}">
-                About this site’s exposure pathways:
-                <span th:utext="${site.exposurePathwayDescription}">EPA text</span>
-              </p>
-            </div>
-            <a class="btn btn-outline-dark btn-sm" th:href="${site.effectiveEpaUrl()}" target="_blank" rel="noopener">View EPA site profile</a>
-          </div>
-        </div>
-      </article>
-    </div>
+    <div class="row g-3">
 
-    <section class="card shadow-sm p-4" th:if="${!viewModel.hasSites}">
-      <h2 class="h4">No active EPA Superfund sites found within 3 miles of this address.</h2>
-      <p class="mb-0">The EPA National Priorities List includes 1,328 active sites nationally. Absence from this list does not mean an area is free from contamination.</p>
-    </section>
+      <!-- Left: site cards or no-sites message -->
+      <div th:class="${viewModel.siteBoundaryGeojson != null ? 'col-md-6' : 'col-12'}">
+        <div class="vstack gap-3" th:if="${viewModel.hasSites}">
+          <article class="card shadow-sm" th:each="site : ${viewModel.sites}">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+                <div>
+                  <h2 class="h4 mb-2"><a th:href="@{/site/{epaId}(epaId=${site.epaId})}" th:text="${site.siteName}">Site name</a></h2>
+                  <p class="mb-2"><strong>Distance:</strong>
+                    <span th:text="${T(com.siteplain.support.DistanceFormatter).format(site.distanceMeters)}">0.4 miles</span>
+                  </p>
+                  <div class="mb-2">
+                    <span th:replace="fragments/exposure-badge :: badge(${site.exposureStatusCode}, ${site.exposureStatusLabel})"></span>
+                  </div>
+                  <p class="mb-0 text-muted" th:if="${site.exposurePathwayDescription != null and !#strings.isEmpty(site.exposurePathwayDescription)}">
+                    About this site's exposure pathways:
+                    <span th:utext="${site.exposurePathwayDescription}">EPA text</span>
+                  </p>
+                </div>
+                <a class="btn btn-outline-dark btn-sm" th:href="${site.effectiveEpaUrl()}" target="_blank" rel="noopener">View EPA site profile</a>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <section class="card shadow-sm p-4" th:if="${!viewModel.hasSites}">
+          <h2 class="h4">No active EPA Superfund sites found within 3 miles of this address.</h2>
+          <p class="mb-0">The EPA National Priorities List includes 1,328 active sites nationally. Absence from this list does not mean an area is free from contamination.</p>
+        </section>
+      </div>
+
+      <!-- Right: map -->
+      <div th:if="${viewModel.siteBoundaryGeojson != null}"
+           class="col-md-6 align-self-start"
+           style="position:sticky;top:1rem;">
+        <div id="results-map"
+             class="card shadow-sm"
+             style="height:380px;overflow:hidden;border-radius:0.5rem;"></div>
+      </div>
+
+    </div>
 
     <div th:replace="fragments/disclaimer :: disclaimer"></div>
     <div th:replace="fragments/feedback-form :: feedback-form('results', null)"></div>
   </div>
 </main>
 <div th:replace="fragments/footer :: footer"></div>
+<script th:if="${viewModel.siteBoundaryGeojson != null}" src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
+<script th:if="${viewModel.siteBoundaryGeojson != null}" th:inline="javascript">
+/*<![CDATA[*/
+(function () {
+  var token = /*[[${viewModel.mapboxPublicToken}]]*/ null;
+  var lat = /*[[${viewModel.userLat}]]*/ null;
+  var lng = /*[[${viewModel.userLng}]]*/ null;
+  var geojsonStr = /*[[${viewModel.siteBoundaryGeojson}]]*/ null;
+  var mapEl = document.getElementById('results-map');
+  if (!token || !lat || !lng || !geojsonStr || !mapEl) return;
+
+  mapboxgl.accessToken = token;
+  var map = new mapboxgl.Map({
+    container: 'results-map',
+    style: 'mapbox://styles/mapbox/light-v11',
+    center: [lng, lat],
+    zoom: 11
+  });
+
+  map.on('load', function () {
+    var geojson = JSON.parse(geojsonStr);
+    map.addSource('sites', { type: 'geojson', data: geojson });
+    map.addLayer({
+      id: 'sites-fill',
+      type: 'fill',
+      source: 'sites',
+      paint: {
+        'fill-color': ['match', ['get', 'color'],
+          'red', '#b73b2d',
+          'yellow', '#b8860b',
+          'green', '#2d7a46',
+          '#6c757d'
+        ],
+        'fill-opacity': 0.25
+      }
+    });
+    map.addLayer({
+      id: 'sites-outline',
+      type: 'line',
+      source: 'sites',
+      paint: {
+        'line-color': ['match', ['get', 'color'],
+          'red', '#b73b2d',
+          'yellow', '#b8860b',
+          'green', '#2d7a46',
+          '#6c757d'
+        ],
+        'line-width': 1.5
+      }
+    });
+    new mapboxgl.Marker({ color: '#1f2520' })
+      .setLngLat([lng, lat])
+      .addTo(map);
+
+    // Fit bounds to include all site polygons + the user pin
+    var allCoords = [];
+    geojson.features.forEach(function (f) {
+      var geom = f.geometry;
+      if (!geom) return;
+      var rings = geom.type === 'Polygon' ? geom.coordinates
+                : geom.type === 'MultiPolygon' ? geom.coordinates.flatMap(function (p) { return p; })
+                : [];
+      rings.forEach(function (ring) { allCoords = allCoords.concat(ring); });
+    });
+    allCoords.push([lng, lat]);
+    if (allCoords.length > 1) {
+      var bounds = allCoords.reduce(function (b, c) { return b.extend(c); },
+        new mapboxgl.LngLatBounds(allCoords[0], allCoords[0]));
+      map.fitBounds(bounds, { padding: 40, maxZoom: 13, animate: false });
+    }
+  });
+})();
+/*]]>*/
+</script>
 <script>
   (() => {
     const btn = document.getElementById('share-btn');

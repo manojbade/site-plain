@@ -158,6 +158,7 @@ a {
 
 .tt-home-action-shell {
   margin-top: 1.5rem;
+  max-width: 560px;
 }
 
 .hero-stat {

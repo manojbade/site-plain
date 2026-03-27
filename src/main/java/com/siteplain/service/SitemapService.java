@@ -3,7 +3,6 @@ package com.siteplain.service;
 import com.siteplain.config.SiteProperties;
 import com.siteplain.data.repository.SeoPageRepository;
 import com.siteplain.data.repository.StatePageRepository;
-import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
