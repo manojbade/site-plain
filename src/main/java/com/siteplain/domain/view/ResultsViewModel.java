@@ -4,7 +4,6 @@ import com.siteplain.domain.model.NplSite;
 import com.siteplain.support.StateResourceRegistry;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 public record ResultsViewModel(
         String inputAddress,
@@ -33,19 +32,6 @@ public record ResultsViewModel(
         resources.add(new OfficialResourceLink("EPA Superfund Site Search", EPA_SUPERFUND_SITE_SEARCH_URL));
         resources.add(new OfficialResourceLink("EPA SEMS facility page", EPA_SEMS_FACILITY_PAGE_URL));
         resources.add(new OfficialResourceLink("ATSDR site info", ATSDR_SITE_INFO_URL));
-        if (lat != null && lng != null) {
-            resources.add(new OfficialResourceLink(
-                    "EPA EJSCREEN",
-                    "https://ejscreen.epa.gov/mapper/?lat=%s&lon=%s&zoom=13".formatted(
-                            formatCoordinate(lat),
-                            formatCoordinate(lng)
-                    )
-            ));
-        }
         return List.copyOf(resources);
-    }
-
-    private static String formatCoordinate(Double coordinate) {
-        return String.format(Locale.US, "%.6f", coordinate);
     }
 }
