@@ -152,6 +152,35 @@ a {
   resize: vertical;
 }
 
+.official-resources-card .card-body {
+  padding: 1.25rem;
+}
+
+.official-resource-link {
+  align-items: center;
+  color: var(--site-ink);
+  display: flex;
+  font-weight: 600;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 0.85rem 0;
+  text-decoration: none;
+}
+
+.official-resource-link + .official-resource-link {
+  border-top: 1px solid rgba(221, 210, 192, 0.9);
+}
+
+.official-resource-link:hover {
+  text-decoration: underline;
+}
+
+.official-resource-icon {
+  color: var(--site-muted);
+  flex: 0 0 auto;
+  font-size: 0.95rem;
+}
+
 .tt-home-hero {
   margin-bottom: 2rem;
 }

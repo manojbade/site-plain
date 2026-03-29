@@ -75,6 +75,22 @@
           <h2 class="h4">No active EPA Superfund sites found within 3 miles of this address.</h2>
           <p class="mb-0">The EPA National Priorities List includes 1,328 active sites nationally. Absence from this list does not mean an area is free from contamination.</p>
         </section>
+
+        <section class="card shadow-sm official-resources-card mt-3">
+          <div class="card-body">
+            <h2 class="h4 mb-3">Official Resources</h2>
+            <div class="vstack">
+              <a class="official-resource-link"
+                 th:each="resource : ${viewModel.officialResources}"
+                 th:href="${resource.url}"
+                 target="_blank"
+                 rel="noopener">
+                <span th:text="${resource.label}">EPA Superfund Site Search</span>
+                <span class="official-resource-icon" aria-hidden="true">&#8599;</span>
+              </a>
+            </div>
+          </div>
+        </section>
       </div>
 
       <!-- Right: map -->
@@ -98,8 +114,8 @@
 /*<![CDATA[*/
 (function () {
   var token = /*[[${viewModel.mapboxPublicToken}]]*/ null;
-  var lat = /*[[${viewModel.userLat}]]*/ null;
-  var lng = /*[[${viewModel.userLng}]]*/ null;
+  var lat = /*[[${viewModel.lat}]]*/ null;
+  var lng = /*[[${viewModel.lng}]]*/ null;
   var geojsonStr = /*[[${viewModel.siteBoundaryGeojson}]]*/ null;
   var mapEl = document.getElementById('results-map');
   if (!token || !lat || !lng || !geojsonStr || !mapEl) return;

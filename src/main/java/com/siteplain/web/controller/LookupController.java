@@ -8,6 +8,7 @@ import com.siteplain.domain.view.ResultsViewModel;
 import com.siteplain.service.AuditService;
 import com.siteplain.service.GeocodingService;
 import com.siteplain.service.NplLookupService;
+import com.siteplain.support.StateResourceRegistry;
 import com.siteplain.web.form.AddressLookupForm;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -85,12 +86,12 @@ public class LookupController {
                     false,
                     0,
                     List.of(),
-                    null, null, null, null
+                    null, null, null, null, null, null
             ));
             return "results";
         }
         if (lat == null || lng == null || address == null) {
-            model.addAttribute("viewModel", new ResultsViewModel(null, null, true, false, 0, List.of(), null, null, null, null));
+            model.addAttribute("viewModel", new ResultsViewModel(null, null, true, false, 0, List.of(), null, null, null, null, null, null));
             return "results";
         }
         GeocodedAddress geocodedAddress = new GeocodedAddress(
@@ -122,9 +123,11 @@ public class LookupController {
                 result.sites().size(),
                 result.sites(),
                 mapboxPublicToken,
+                geocodedAddress.stateCode(),
                 lat,
                 lng,
-                siteBoundaryGeojson
+                siteBoundaryGeojson,
+                StateResourceRegistry.lookup(geocodedAddress.stateCode())
         ));
         return "results";
     }
