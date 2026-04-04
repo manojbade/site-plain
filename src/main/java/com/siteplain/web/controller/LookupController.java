@@ -8,12 +8,17 @@ import com.siteplain.domain.view.ResultsViewModel;
 import com.siteplain.service.AuditService;
 import com.siteplain.service.GeocodingService;
 import com.siteplain.service.NplLookupService;
+import com.siteplain.service.ResultsPdfService;
 import com.siteplain.support.StateResourceRegistry;
 import com.siteplain.web.form.AddressLookupForm;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
@@ -30,6 +35,7 @@ public class LookupController {
     private final NplLookupService nplLookupService;
     private final AuditService auditService;
     private final NplBoundaryRepository nplBoundaryRepository;
+    private final ResultsPdfService resultsPdfService;
 
     @Value("${MAPBOX_PUBLIC_TOKEN:}")
     private String mapboxPublicToken;
@@ -37,11 +43,13 @@ public class LookupController {
     public LookupController(GeocodingService geocodingService,
                             NplLookupService nplLookupService,
                             AuditService auditService,
-                            NplBoundaryRepository nplBoundaryRepository) {
+                            NplBoundaryRepository nplBoundaryRepository,
+                            ResultsPdfService resultsPdfService) {
         this.geocodingService = geocodingService;
         this.nplLookupService = nplLookupService;
         this.auditService = auditService;
         this.nplBoundaryRepository = nplBoundaryRepository;
+        this.resultsPdfService = resultsPdfService;
     }
 
     @PostMapping("/lookup")
@@ -79,21 +87,47 @@ public class LookupController {
                               @RequestParam(required = false) String error,
                               Model model) {
         if ("unresolved".equalsIgnoreCase(error)) {
-            model.addAttribute("viewModel", new ResultsViewModel(
-                    raw != null ? raw : address,
-                    address,
-                    true,
-                    false,
-                    0,
-                    List.of(),
-                    null, null, null, null, null, null
-            ));
+            model.addAttribute("viewModel", unresolvedViewModel(raw != null ? raw : address, address));
             return "results";
         }
         if (lat == null || lng == null || address == null) {
-            model.addAttribute("viewModel", new ResultsViewModel(null, null, true, false, 0, List.of(), null, null, null, null, null, null));
+            model.addAttribute("viewModel", unresolvedViewModel(null, null));
             return "results";
         }
+        ResultsViewModel viewModel = buildResolvedViewModel(lat, lng, address, raw, state, geocoder, true, true);
+        model.addAttribute("viewModel", viewModel);
+        return "results";
+    }
+
+    @GetMapping(value = "/results/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
+    public ResponseEntity<byte[]> downloadResultsPdf(@RequestParam(required = false) Double lat,
+                                                     @RequestParam(required = false) Double lng,
+                                                     @RequestParam(required = false) String address,
+                                                     @RequestParam(required = false) String raw,
+                                                     @RequestParam(required = false) String state,
+                                                     @RequestParam(required = false) String geocoder) {
+        if (lat == null || lng == null || address == null) {
+            return ResponseEntity.badRequest().build();
+        }
+        ResultsViewModel viewModel = buildResolvedViewModel(lat, lng, address, raw, state, geocoder, false, false);
+        byte[] pdf = resultsPdfService.generateResultsPdf(viewModel);
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
+                        .filename("site-plain-results.pdf")
+                        .build()
+                        .toString())
+                .body(pdf);
+    }
+
+    private ResultsViewModel buildResolvedViewModel(Double lat,
+                                                    Double lng,
+                                                    String address,
+                                                    String raw,
+                                                    String state,
+                                                    String geocoder,
+                                                    boolean includeMap,
+                                                    boolean writeAuditLog) {
         GeocodedAddress geocodedAddress = new GeocodedAddress(
                 raw != null ? raw : address,
                 address,
@@ -106,30 +140,48 @@ public class LookupController {
                 true
         );
         NplLookupResult result = nplLookupService.findSitesNear(geocodedAddress);
-        auditService.logLookup(geocodedAddress, result);
+        if (writeAuditLog) {
+            auditService.logLookup(geocodedAddress, result);
+        }
 
         String siteBoundaryGeojson = null;
-        if (!result.sites().isEmpty()) {
+        if (includeMap && !result.sites().isEmpty()) {
             List<String> epaIds = result.sites().stream().map(NplSite::getEpaId).toList();
             Map<String, String> geomMap = nplBoundaryRepository.findGeoJsonByIds(epaIds);
             siteBoundaryGeojson = buildFeatureCollection(result.sites(), geomMap);
         }
 
-        model.addAttribute("viewModel", new ResultsViewModel(
+        return new ResultsViewModel(
                 geocodedAddress.rawAddress(),
                 geocodedAddress.normalizedAddress(),
                 false,
                 !result.sites().isEmpty(),
                 result.sites().size(),
                 result.sites(),
-                mapboxPublicToken,
+                includeMap ? mapboxPublicToken : null,
                 geocodedAddress.stateCode(),
                 lat,
                 lng,
                 siteBoundaryGeojson,
                 StateResourceRegistry.lookup(geocodedAddress.stateCode())
-        ));
-        return "results";
+        );
+    }
+
+    private ResultsViewModel unresolvedViewModel(String inputAddress, String normalizedAddress) {
+        return new ResultsViewModel(
+                inputAddress,
+                normalizedAddress,
+                true,
+                false,
+                0,
+                List.of(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
     }
 
     static String buildFeatureCollection(List<NplSite> sites, Map<String, String> geomMap) {

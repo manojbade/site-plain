@@ -28,33 +28,89 @@
       </p>
 
       <div class="tt-home-action-shell text-start">
-        <form method="post"
-              th:action="@{/lookup}"
-              th:object="${lookupForm}"
-              class="row g-3 tt-primary-lookup-pane"
-              th:attr="data-mapbox-token=${mapboxPublicToken}">
-          <div class="col-12 col-md-9">
-            <div class="tt-address-field-shell">
-              <input type="text"
-                     th:field="*{address}"
-                     id="lookup-address"
-                     class="form-control tt-primary-input"
-                     placeholder="Enter a home address"
-                     autocomplete="off"
-                     aria-autocomplete="list"
-                     aria-expanded="false"
-                     aria-controls="lookup-address-suggestions">
-              <div id="lookup-address-suggestions"
-                   class="tt-address-suggestions d-none"
-                   role="listbox"
-                   aria-label="Address suggestions"></div>
-            </div>
+        <ul class="nav nav-pills tt-segmented tt-home-segmented mb-3" role="tablist" aria-label="Search type">
+          <li class="nav-item flex-fill" role="presentation">
+            <button type="button"
+                    class="nav-link w-100 text-center active"
+                    id="tab-address-search"
+                    data-search-tab-target="panel-address-search"
+                    aria-controls="panel-address-search"
+                    aria-selected="true"
+                    role="tab">
+              Search by address
+            </button>
+          </li>
+          <li class="nav-item flex-fill" role="presentation">
+            <button type="button"
+                    class="nav-link w-100 text-center"
+                    id="tab-site-search"
+                    data-search-tab-target="panel-site-search"
+                    aria-controls="panel-site-search"
+                    aria-selected="false"
+                    role="tab">
+              Search by site name or EPA ID
+            </button>
+          </li>
+        </ul>
+
+        <div class="tt-search-panels">
+          <div class="tt-search-panel is-active" id="panel-address-search" role="tabpanel" aria-labelledby="tab-address-search">
+            <p class="tt-search-panel-copy">Use an address to find all active Superfund sites within 3 miles of a home, school, or other location.</p>
+            <form method="post"
+                  th:action="@{/lookup}"
+                  th:object="${lookupForm}"
+                  class="row g-3 tt-primary-lookup-pane"
+                  th:attr="data-mapbox-token=${mapboxPublicToken}">
+              <div class="col-12 col-md-9">
+                <div class="tt-address-field-shell">
+                  <input type="text"
+                         th:field="*{address}"
+                         id="lookup-address"
+                         class="form-control tt-primary-input"
+                         placeholder="Enter a home address"
+                         autocomplete="off"
+                         aria-autocomplete="list"
+                         aria-expanded="false"
+                         aria-controls="lookup-address-suggestions">
+                  <div id="lookup-address-suggestions"
+                       class="tt-address-suggestions d-none"
+                       role="listbox"
+                       aria-label="Address suggestions"></div>
+                </div>
+              </div>
+              <div class="col-12 col-md-3">
+                <button type="submit" class="btn btn-dark w-100">Find nearby sites</button>
+              </div>
+              <div class="col-12 text-danger" th:if="${#fields.hasErrors('address')}" th:errors="*{address}"></div>
+            </form>
           </div>
-          <div class="col-12 col-md-3">
-            <button type="submit" class="btn btn-dark w-100">Find nearby sites</button>
+
+          <div class="tt-search-panel" id="panel-site-search" role="tabpanel" aria-labelledby="tab-site-search">
+            <p class="tt-search-panel-copy">Already know the site name or EPA number? Search directly and jump to the official Site Plain page for that facility.</p>
+            <form method="get" th:action="@{/search/sites}" class="row g-3 tt-site-search-pane">
+              <div class="col-12 col-md-9">
+                <div class="tt-address-field-shell">
+                  <input type="text"
+                         id="site-search-query"
+                         name="q"
+                         class="form-control tt-primary-input"
+                         placeholder="Search by facility name or EPA ID"
+                         autocomplete="off"
+                         aria-autocomplete="list"
+                         aria-expanded="false"
+                         aria-controls="site-search-suggestions">
+                  <div id="site-search-suggestions"
+                       class="tt-address-suggestions d-none"
+                       role="listbox"
+                       aria-label="Site search suggestions"></div>
+                </div>
+              </div>
+              <div class="col-12 col-md-3">
+                <button type="submit" class="btn btn-outline-dark w-100">Search sites</button>
+              </div>
+            </form>
           </div>
-          <div class="col-12 text-danger" th:if="${#fields.hasErrors('address')}" th:errors="*{address}"></div>
-        </form>
+        </div>
       </div>
 
       <p class="text-muted small mt-3 mb-0">
@@ -140,6 +196,25 @@
 <div th:replace="~{fragments/footer :: footer}"></div>
 <script>
   (() => {
+    document.documentElement.classList.add('js-enabled');
+
+    const tabs = Array.from(document.querySelectorAll('.tt-segmented .nav-link[data-search-tab-target]'));
+    const panels = Array.from(document.querySelectorAll('.tt-search-panel'));
+    const activateTab = (targetId) => {
+      tabs.forEach((tab) => {
+        const isActive = tab.dataset.searchTabTarget === targetId;
+        tab.classList.toggle('active', isActive);
+        tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      });
+      panels.forEach((panel) => {
+        panel.classList.toggle('is-active', panel.id === targetId);
+      });
+    };
+
+    tabs.forEach((tab) => {
+      tab.addEventListener('click', () => activateTab(tab.dataset.searchTabTarget));
+    });
+
     const pane = document.querySelector('.tt-primary-lookup-pane[data-mapbox-token]');
     const input = document.getElementById('lookup-address');
     const suggestionPanel = document.getElementById('lookup-address-suggestions');
@@ -292,6 +367,161 @@
       if (event.key === 'Enter' && activeIndex >= 0) {
         event.preventDefault();
         applySuggestion(suggestions[activeIndex]);
+        return;
+      }
+
+      if (event.key === 'Escape') {
+        clearSuggestions();
+      }
+    });
+
+    input.addEventListener('blur', () => {
+      window.setTimeout(clearSuggestions, 120);
+    });
+
+    document.addEventListener('click', (event) => {
+      if (!pane.contains(event.target)) {
+        clearSuggestions();
+      }
+    });
+  })();
+</script>
+<script>
+  (() => {
+    const pane = document.querySelector('.tt-site-search-pane');
+    const input = document.getElementById('site-search-query');
+    const suggestionPanel = document.getElementById('site-search-suggestions');
+    if (!pane || !input || !suggestionPanel) {
+      return;
+    }
+
+    let debounceHandle;
+    let abortController;
+    let activeIndex = -1;
+    let suggestions = [];
+
+    const clearSuggestions = () => {
+      suggestions = [];
+      activeIndex = -1;
+      suggestionPanel.innerHTML = '';
+      suggestionPanel.classList.add('d-none');
+      input.setAttribute('aria-expanded', 'false');
+    };
+
+    const setActive = (nextIndex) => {
+      activeIndex = nextIndex;
+      Array.from(suggestionPanel.querySelectorAll('.tt-address-suggestion')).forEach((button, index) => {
+        button.classList.toggle('is-active', index === activeIndex);
+        button.setAttribute('aria-selected', index === activeIndex ? 'true' : 'false');
+      });
+    };
+
+    const goToSite = (suggestion) => {
+      if (!suggestion?.epaId) {
+        return;
+      }
+      window.location.assign(`/site/${encodeURIComponent(suggestion.epaId)}`);
+    };
+
+    const renderSuggestions = (items) => {
+      suggestions = Array.isArray(items) ? items.filter((item) => item?.epaId && item?.siteName) : [];
+      suggestionPanel.innerHTML = '';
+      activeIndex = -1;
+
+      if (suggestions.length === 0) {
+        suggestionPanel.classList.add('d-none');
+        input.setAttribute('aria-expanded', 'false');
+        return;
+      }
+
+      suggestions.forEach((item, index) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'tt-address-suggestion';
+        button.setAttribute('role', 'option');
+        button.setAttribute('aria-selected', 'false');
+
+        const text = document.createElement('span');
+        text.className = 'tt-address-suggestion-text';
+        text.textContent = item.siteName;
+        button.appendChild(text);
+
+        const meta = document.createElement('span');
+        meta.className = 'tt-address-suggestion-meta';
+        meta.textContent = `${item.stateCode || 'State not reported'} | EPA ID ${item.epaId}`;
+        button.appendChild(meta);
+
+        button.addEventListener('mousedown', (event) => {
+          event.preventDefault();
+          goToSite(item);
+        });
+        button.addEventListener('mouseenter', () => setActive(index));
+        suggestionPanel.appendChild(button);
+      });
+
+      suggestionPanel.classList.remove('d-none');
+      input.setAttribute('aria-expanded', 'true');
+    };
+
+    const fetchSuggestions = async (query) => {
+      if (abortController) {
+        abortController.abort();
+      }
+
+      abortController = new AbortController();
+      const params = new URLSearchParams({ q: query });
+      const response = await fetch(`/api/site-search/suggestions?${params.toString()}`, {
+        method: 'GET',
+        signal: abortController.signal
+      });
+
+      if (!response.ok) {
+        throw new Error(`Site suggestion request failed: ${response.status}`);
+      }
+
+      renderSuggestions(await response.json());
+    };
+
+    input.addEventListener('input', () => {
+      const query = input.value.trim();
+      window.clearTimeout(debounceHandle);
+
+      if (query.length < 2) {
+        clearSuggestions();
+        return;
+      }
+
+      debounceHandle = window.setTimeout(async () => {
+        try {
+          await fetchSuggestions(query);
+        } catch (error) {
+          if (error.name !== 'AbortError') {
+            clearSuggestions();
+          }
+        }
+      }, 250);
+    });
+
+    input.addEventListener('keydown', (event) => {
+      if (suggestions.length === 0) {
+        return;
+      }
+
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setActive(activeIndex < suggestions.length - 1 ? activeIndex + 1 : 0);
+        return;
+      }
+
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setActive(activeIndex > 0 ? activeIndex - 1 : suggestions.length - 1);
+        return;
+      }
+
+      if (event.key === 'Enter' && activeIndex >= 0) {
+        event.preventDefault();
+        goToSite(suggestions[activeIndex]);
         return;
       }
 

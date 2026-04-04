@@ -1,6 +1,7 @@
 package com.siteplain.data.repository;
 
 import com.siteplain.domain.model.SeoPageData;
+import com.siteplain.domain.view.SiteSearchSuggestion;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -85,6 +86,48 @@ public class SeoPageRepository {
     public int countCachedSites() {
         Integer count = jdbcTemplate.queryForObject("SELECT count(*) FROM site_seo_page_cache", Integer.class);
         return count == null ? 0 : count;
+    }
+
+    public List<SiteSearchSuggestion> searchSuggestions(String query, int limit) {
+        String containsPattern = "%" + query + "%";
+        String prefixPattern = query + "%";
+        return jdbcTemplate.query("""
+                SELECT epa_id, site_name, state_code, exposure_status_label
+                FROM site_seo_page_cache
+                WHERE upper(epa_id) LIKE upper(?)
+                   OR lower(site_name) LIKE lower(?)
+                ORDER BY CASE
+                    WHEN upper(epa_id) = upper(?) THEN 0
+                    WHEN lower(site_name) = lower(?) THEN 1
+                    WHEN upper(epa_id) LIKE upper(?) THEN 2
+                    WHEN lower(site_name) LIKE lower(?) THEN 3
+                    ELSE 4
+                  END,
+                  abs(length(site_name) - length(?)) ASC,
+                  lower(site_name) ASC,
+                  epa_id ASC
+                LIMIT ?
+                """, (rs, rowNum) -> new SiteSearchSuggestion(
+                rs.getString("epa_id"),
+                rs.getString("site_name"),
+                rs.getString("state_code"),
+                rs.getString("exposure_status_label")
+        ), containsPattern, containsPattern, query, query, prefixPattern, prefixPattern, query, limit);
+    }
+
+    public List<SiteSearchSuggestion> findExactSiteNameMatches(String siteName, int limit) {
+        return jdbcTemplate.query("""
+                SELECT epa_id, site_name, state_code, exposure_status_label
+                FROM site_seo_page_cache
+                WHERE lower(site_name) = lower(?)
+                ORDER BY epa_id ASC
+                LIMIT ?
+                """, (rs, rowNum) -> new SiteSearchSuggestion(
+                rs.getString("epa_id"),
+                rs.getString("site_name"),
+                rs.getString("state_code"),
+                rs.getString("exposure_status_label")
+        ), siteName, limit);
     }
 
     public List<ActiveBoundaryRow> findActiveBoundaryRows() {

@@ -32,6 +32,10 @@
         </div>
         <div class="d-flex flex-wrap gap-2 align-items-center">
           <a href="/" class="site-nav-button">&#8592; Check another address</a>
+          <a class="site-nav-button"
+             th:href="@{/results/pdf(lat=${viewModel.lat}, lng=${viewModel.lng}, address=${viewModel.normalizedAddress}, raw=${viewModel.inputAddress}, state=${viewModel.stateCode})}">
+            Download results
+          </a>
           <input id="share-url" type="text" class="visually-hidden" value="" readonly>
           <button class="site-nav-button" type="button" id="share-btn">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="margin-right:0.35rem;vertical-align:-1px">

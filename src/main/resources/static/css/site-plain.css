@@ -186,7 +186,86 @@ a {
 }
 
 .tt-home-action-shell {
+  background: rgba(255, 253, 248, 0.72);
+  border: 1px solid rgba(140, 106, 63, 0.16);
+  border-radius: 1.2rem;
+  padding: 1rem;
   margin-top: 1.5rem;
+}
+
+.tt-segmented {
+  background: #ede9e1;
+  border: none;
+  border-radius: 1rem;
+  box-shadow: none;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.35rem;
+  overflow-x: auto;
+  padding: 0.4rem;
+  scrollbar-width: none;
+}
+
+.tt-segmented::-webkit-scrollbar {
+  display: none;
+}
+
+.tt-segmented .nav-link {
+  background: transparent;
+  border: none;
+  border-radius: 0.75rem;
+  color: var(--site-muted);
+  flex-shrink: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  min-height: 3.1rem;
+  padding: 0.8rem 1rem;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
+}
+
+.tt-segmented .nav-link:hover {
+  background: rgba(140, 106, 63, 0.08);
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--site-accent);
+}
+
+.tt-segmented .nav-link.active {
+  background: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 2px 8px rgba(28, 28, 24, 0.10);
+  color: var(--site-ink);
+}
+
+.tt-home-segmented .nav-link {
+  min-height: 3.45rem;
+}
+
+.tt-search-panels {
+  margin-top: 0.15rem;
+}
+
+.tt-search-panel {
+  background: rgba(255, 255, 255, 0.42);
+  border: 1px solid rgba(140, 106, 63, 0.12);
+  border-radius: 1.05rem;
+  padding: 1rem 0.95rem;
+}
+
+.js-enabled .tt-search-panel {
+  display: none;
+}
+
+.js-enabled .tt-search-panel.is-active {
+  display: block;
+}
+
+.tt-search-panel-copy {
+  color: var(--site-muted);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  margin-bottom: 0.85rem;
 }
 
 .hero-stat {
@@ -260,6 +339,14 @@ a {
   line-height: 1.4;
 }
 
+.tt-address-suggestion-meta {
+  color: var(--site-muted);
+  display: block;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  margin-top: 0.2rem;
+}
+
 .tt-source-strip {
   display: flex;
   flex-wrap: wrap;
@@ -328,7 +415,27 @@ a {
   margin: 0;
 }
 
+.site-search-match + .site-search-match {
+  border-top: 1px solid var(--site-line);
+  padding-top: 1rem;
+}
+
 @media (max-width: 767.98px) {
+  .tt-home-action-shell {
+    padding: 0.9rem;
+  }
+
+  .tt-segmented {
+    flex-direction: row;
+  }
+
+  .tt-segmented .nav-link {
+    font-size: 0.92rem;
+    min-height: 3rem;
+    padding-left: 0.8rem;
+    padding-right: 0.8rem;
+  }
+
   .site-masthead-inner {
     align-items: flex-start;
     flex-direction: column;
