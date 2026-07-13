@@ -107,7 +107,8 @@ def main():
         if col in out.columns:
             out[col] = out[col].where(out[col].notna(), None)
 
-    # Final NPL only
+    # Report the Final NPL count only. All statuses are written to the output;
+    # the app filters to NPL_STATUS_CODE='F' at query time, not here.
     final_count = (out["NPL_STATUS_CODE"] == "F").sum() if "NPL_STATUS_CODE" in out.columns else "unknown"
     print(f"  Final NPL sites (status='F'): {final_count}")
 

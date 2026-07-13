@@ -137,6 +137,7 @@ curl -s "https://site-plain.com/actuator/health"                                
 - **Boundary reload on a populated table:** if the download yields zero rows, or fewer than 90% of the current live count, the load aborts with an exception and the swap does not happen. The previous data stays live. Check deploy logs.
 - **Human exposure reload:** if the feed returns 1,500 or fewer matched rows, bootstrap throws. On a first boot (empty DB) this aborts startup; the app will not come up with no data.
 - **Boundaries are never touched by a routine deploy** unless the refresh policy triggers (flag set, table empty, or older than `MAX_AGE_DAYS`).
+- **A boundary reload against a dead URL fails startup, not just the refresh.** When the policy triggers a reload and `SITEPLAIN_DATA_NPL_BOUNDARIES_URL` 404s or is unreachable, `NplBoundaryLoader` throws and `DataBootstrapService` propagates it, so the container fails to boot. The dangerous case is silent: with `MAX_AGE_DAYS=90` and `REFRESH_ON_STARTUP=false`, everything looks fine for 90 days, then the next restart past that age tries to reload and takes the site down if the release URL has since been deleted or renamed. Keep the URL valid for as long as it is referenced, or delete old releases only after pointing the var at a new one.
 
 ---
 
