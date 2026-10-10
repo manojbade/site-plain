@@ -15,10 +15,22 @@ import java.net.URI;
 @Component
 public class CanonicalHostFilter extends OncePerRequestFilter {
 
+    static final String PROBE_PATH_PREFIX = "/actuator/health/";
+
     private final SiteProperties siteProperties;
 
     public CanonicalHostFilter(SiteProperties siteProperties) {
         this.siteProperties = siteProperties;
+    }
+
+    /**
+     * The liveness and readiness probes answer on any host: Railway's healthcheck calls the container
+     * directly over plain HTTP with the host healthcheck.railway.app and needs a 200 from that container.
+     * A redirect to the public host would fail the check, or answer for the deployment already live.
+     */
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        return request.getRequestURI().startsWith(PROBE_PATH_PREFIX);
     }
 
     @Override
