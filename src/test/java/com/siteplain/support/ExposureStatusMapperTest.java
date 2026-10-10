@@ -14,7 +14,7 @@ class ExposureStatusMapperTest {
         assertThat(ExposureStatusMapper.label("HEUC")).isEqualTo("Human exposure is under control");
         assertThat(ExposureStatusMapper.color("HEUC")).isEqualTo("yellow");
 
-        assertThat(ExposureStatusMapper.label("HEPR")).isEqualTo("Human exposure is under control — protective remedies in place");
+        assertThat(ExposureStatusMapper.label("HEPR")).isEqualTo("Human exposure is under control, protective remedies in place");
         assertThat(ExposureStatusMapper.color("HEPR")).isEqualTo("yellow");
 
         assertThat(ExposureStatusMapper.label("HHPA")).isEqualTo("Long-term health protection has been achieved");
@@ -22,6 +22,9 @@ class ExposureStatusMapperTest {
 
         assertThat(ExposureStatusMapper.label("HEID")).isEqualTo("Exposure status: insufficient data");
         assertThat(ExposureStatusMapper.color("HEID")).isEqualTo("gray");
+
+        assertThat(ExposureStatusMapper.label("HEIC")).isEqualTo("Exposure status: insufficient data");
+        assertThat(ExposureStatusMapper.color("HEIC")).isEqualTo("gray");
     }
 
     @Test

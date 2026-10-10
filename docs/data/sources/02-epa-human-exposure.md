@@ -38,7 +38,10 @@ Active sites with no boundary (`has_boundary = false`, 15 on 2026-10-10) get a `
 | HEPR | Under control, protective remedies in place | Protective remedies in place | Yellow |
 | HHPA | Long-term health protection achieved | Health protection achieved | Green |
 | HEID | Insufficient data | Insufficient data | Gray |
+| HEIC | No EPA definition found; shown as insufficient data | Insufficient data | Gray |
 | null / missing / no record | Not reported | Not reported | Gray |
+
+HEIC appears in the feed (2 rows on 2026-10-10, both non-Final sites) but EPA's published definitions do not cover it, so it is shown as insufficient data rather than as a raw code. Each site page, results page and results PDF shows "EPA exposure status as of <date>", the date the feed in use was loaded (max `loaded_at` of `npl_human_exposure`).
 
 The exact mapping lives in `ExposureStatusMapper`. Red/yellow/green reflects EPA's exposure-control assessment, not whether a site is actively dangerous. Sites with a Final boundary but no exposure record render Gray ("Not reported").
 

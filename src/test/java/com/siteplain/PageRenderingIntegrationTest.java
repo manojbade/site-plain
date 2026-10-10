@@ -193,6 +193,25 @@ class PageRenderingIntegrationTest {
     }
 
     @Test
+    void resultsPage_saysInsideBoundaryForAPointInsideTheSite() throws Exception {
+        String inside = mockMvc.perform(get("/results")
+                        .param("lat", "39.825")
+                        .param("lng", "-84.055")
+                        .param("address", "1 Main St, Dayton, OH"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(inside).contains("Inside the EPA site boundary").doesNotContain("Less than 10 feet");
+
+        String outside = mockMvc.perform(get("/results")
+                        .param("lat", "39.825")
+                        .param("lng", "-84.045")
+                        .param("address", "2 Main St, Dayton, OH"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(outside).contains("Render Test Landfill").doesNotContain("Inside the EPA site boundary");
+    }
+
+    @Test
     void statePage_metaDescriptionNamesState() throws Exception {
         String html = mockMvc.perform(get("/state/OH"))
                 .andExpect(status().isOk())

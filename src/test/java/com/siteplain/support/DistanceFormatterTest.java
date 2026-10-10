@@ -22,7 +22,12 @@ class DistanceFormatterTest {
     }
 
     @Test
-    void format_zeroMetersUsesImmediateAdjacencyMessage() {
-        assertThat(DistanceFormatter.format(0)).contains("Less than 10 feet");
+    void format_zeroMetersSaysInsideBoundary() {
+        assertThat(DistanceFormatter.format(0)).isEqualTo("Inside the EPA site boundary");
+    }
+
+    @Test
+    void format_underTenFeetOutsideUsesImmediateAdjacencyMessage() {
+        assertThat(DistanceFormatter.format(1.5)).isEqualTo("Less than 10 feet (immediately adjacent to site boundary)");
     }
 }

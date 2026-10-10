@@ -12,9 +12,11 @@ public final class ExposureStatusMapper {
         return switch (code.toUpperCase()) {
             case "HENC" -> "Human exposure is NOT currently under control";
             case "HEUC" -> "Human exposure is under control";
-            case "HEPR" -> "Human exposure is under control — protective remedies in place";
+            case "HEPR" -> "Human exposure is under control, protective remedies in place";
             case "HHPA" -> "Long-term health protection has been achieved";
-            case "HEID" -> "Exposure status: insufficient data";
+            // EPA publishes no definition for HEIC (it appears on two non-Final sites), so it is
+            // shown the same way as HEID rather than as a raw code.
+            case "HEID", "HEIC" -> "Exposure status: insufficient data";
             default -> "Exposure status: " + code;
         };
     }
