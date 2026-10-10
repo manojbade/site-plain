@@ -6,10 +6,13 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.any;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.Mockito.inOrder;
 
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowCallbackHandler;
 
@@ -32,5 +35,14 @@ class NplBoundaryRepositoryTest {
 
         assertThat(result).isEmpty();
         verify(jdbcTemplate, never()).query(anyString(), any(RowCallbackHandler.class), any(Object[].class));
+    }
+
+    @Test
+    void swapStagingToLive_analyzesTheNewRowsSoTheLookupKeepsItsIndex() {
+        repository.swapStagingToLive();
+
+        InOrder order = inOrder(jdbcTemplate);
+        order.verify(jdbcTemplate).update(contains("FROM npl_site_boundaries_staging"));
+        order.verify(jdbcTemplate).execute("ANALYZE npl_site_boundaries");
     }
 }

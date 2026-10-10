@@ -4,12 +4,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.siteplain.domain.model.GeocodedAddress;
 import com.siteplain.domain.model.NplLookupResult;
+import java.sql.ResultSet;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
@@ -65,6 +70,43 @@ class NplLookupServiceIntegrationTest {
         NplLookupResult result = nplLookupService.findSitesNear(resolvedAddress(33.775, -84.395));
 
         assertThat(result.sites()).extracting(site -> site.getEpaId()).containsExactly("TEST001");
+    }
+
+    @Test
+    void lookupQuery_canUseTheGeographyIndexThroughTheActiveSiteView() {
+        // With a few hundred boundaries the planner must pick idx_npl_boundaries_geog for the view's
+        // ST_DWithin on geom::geography. Without the V6 index it seq scans every boundary row.
+        // Everything runs in one transaction that is rolled back, including the ANALYZE.
+        List<String> plan = jdbcTemplate.execute((ConnectionCallback<List<String>>) connection -> {
+            boolean autoCommit = connection.getAutoCommit();
+            connection.setAutoCommit(false);
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("""
+                        INSERT INTO npl_site_boundaries (epa_id, site_name, state_code, npl_status_code, geom, loaded_at)
+                        SELECT 'IDX' || g, 'Index Test ' || g, 'GA', 'F',
+                               ST_Multi(ST_MakeEnvelope(-120 + g * 0.1, 30, -119.99 + g * 0.1, 30.01, 4326)), now()
+                        FROM generate_series(1, 400) g
+                        """);
+                statement.execute("ANALYZE npl_site_boundaries");
+                List<String> lines = new ArrayList<>();
+                try (ResultSet rs = statement.executeQuery("""
+                        EXPLAIN SELECT a.epa_id FROM active_npl_sites a
+                        WHERE a.geom IS NOT NULL
+                          AND ST_DWithin(a.geom::geography,
+                                         ST_SetSRID(ST_MakePoint(-84.395, 33.775), 4326)::geography, 4828.032)
+                        """)) {
+                    while (rs.next()) {
+                        lines.add(rs.getString(1));
+                    }
+                }
+                return lines;
+            } finally {
+                connection.rollback();
+                connection.setAutoCommit(autoCommit);
+            }
+        });
+
+        assertThat(String.join("\n", plan)).contains("idx_npl_boundaries_geog");
     }
 
     private void insertBoundary(String epaId, String statusCode) {

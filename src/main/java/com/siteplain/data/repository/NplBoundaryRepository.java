@@ -72,6 +72,9 @@ public class NplBoundaryRepository {
                 SELECT epa_id, site_name, state_code, npl_status_code, epa_url, geom, loaded_at
                 FROM npl_site_boundaries_staging
                 """);
+        // TRUNCATE drops the planner's row estimates, and until autovacuum analyzes the new rows the
+        // lookup skips idx_npl_boundaries_geog and runs ST_DWithin on every row (about 0.8 s).
+        jdbcTemplate.execute("ANALYZE npl_site_boundaries");
     }
 
     public int countActiveSites() {
