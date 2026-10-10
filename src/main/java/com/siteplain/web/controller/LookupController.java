@@ -11,7 +11,9 @@ import com.siteplain.service.NplLookupService;
 import com.siteplain.service.ResultsPdfService;
 import com.siteplain.support.StateNames;
 import com.siteplain.support.StateResourceRegistry;
+import com.siteplain.support.UsCoverageArea;
 import com.siteplain.web.form.AddressLookupForm;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Locale;
@@ -67,7 +69,7 @@ public class LookupController {
             return "index";
         }
         GeocodedAddress geocodedAddress = geocodingService.geocode(form.getAddress().trim());
-        if (!geocodedAddress.resolved()) {
+        if (!geocodedAddress.resolved() || !UsCoverageArea.contains(geocodedAddress.latitude(), geocodedAddress.longitude())) {
             auditService.logLookup(geocodedAddress, new NplLookupResult(geocodedAddress, java.util.List.of(), null, true));
             redirectAttributes.addAttribute("error", "unresolved");
             redirectAttributes.addAttribute("address", form.getAddress().trim());
@@ -94,13 +96,20 @@ public class LookupController {
                               @RequestParam(required = false) String geocoder,
                               @RequestParam(required = false) String approx,
                               @RequestParam(required = false) String error,
-                              Model model) {
+                              Model model,
+                              HttpServletResponse response) {
         if ("unresolved".equalsIgnoreCase(error)) {
             model.addAttribute("viewModel", unresolvedViewModel(raw != null ? raw : address, address));
             return "results";
         }
         if (lat == null || lng == null || address == null) {
             model.addAttribute("viewModel", unresolvedViewModel(null, null));
+            return "results";
+        }
+        if (!UsCoverageArea.contains(lat, lng)) {
+            // Not a point any lookup could produce. Answering would give a confident "no sites".
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            model.addAttribute("viewModel", unresolvedViewModel(raw != null ? raw : address, address));
             return "results";
         }
         ResultsViewModel viewModel = buildResolvedViewModel(lat, lng, address, raw, state, geocoder, approx, true, true);
@@ -116,7 +125,7 @@ public class LookupController {
                                                      @RequestParam(required = false) String state,
                                                      @RequestParam(required = false) String geocoder,
                                                      @RequestParam(required = false) String approx) {
-        if (lat == null || lng == null || address == null) {
+        if (lat == null || lng == null || address == null || !UsCoverageArea.contains(lat, lng)) {
             return ResponseEntity.badRequest().build();
         }
         ResultsViewModel viewModel = buildResolvedViewModel(lat, lng, address, raw, state, geocoder, approx, false, false);

@@ -1,13 +1,17 @@
 package com.siteplain.web.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.siteplain.data.repository.NplBoundaryRepository;
 import com.siteplain.domain.model.GeocodedAddress;
+import com.siteplain.domain.model.NplLookupResult;
 import com.siteplain.service.AuditService;
 import com.siteplain.service.GeocodingService;
 import com.siteplain.service.NplLookupService;
@@ -76,6 +80,19 @@ class LookupControllerRequestTest {
                 .andReturn().getResponse().getRedirectedUrl();
 
         assertThat(location).contains("state=MA").doesNotContain("approx");
+    }
+
+    @Test
+    void lookup_treatsGeocodeOutsideCoverageAsUnresolved() throws Exception {
+        when(geocodingService.geocode(anyString())).thenReturn(new GeocodedAddress(
+                "Null Island", "Null Island", null, null, null, "nominatim", 0.0, 0.0, true));
+
+        String location = mockMvc.perform(post("/lookup").param("address", "Null Island"))
+                .andExpect(status().is3xxRedirection())
+                .andReturn().getResponse().getRedirectedUrl();
+
+        assertThat(location).contains("error=unresolved").doesNotContain("lat=");
+        verify(auditService).logLookup(any(), argThat(NplLookupResult::unresolved));
     }
 
     @Test

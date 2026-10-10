@@ -134,6 +134,38 @@ class PageRenderingIntegrationTest {
     }
 
     @Test
+    void results_rejectInvalidCoordinatesWithoutAuditRow() throws Exception {
+        int auditRows = auditRowCount();
+        String[][] invalid = {
+                {"NaN", "NaN"}, {"Infinity", "-84.05"}, {"39.82", "-Infinity"},
+                {"95", "200"}, {"1e300", "-84.05"}, {"0", "0"}, {"51.5", "-0.12"}};
+        for (String[] point : invalid) {
+            String html = mockMvc.perform(get("/results")
+                            .param("lat", point[0])
+                            .param("lng", point[1])
+                            .param("address", "1 Example Street, Woburn, MA 01801"))
+                    .andExpect(status().isBadRequest())
+                    .andReturn().getResponse().getContentAsString();
+            assertThat(html).contains("Address could not be resolved")
+                    .doesNotContain("No active EPA Superfund sites found");
+
+            mockMvc.perform(get("/results/pdf")
+                            .param("lat", point[0])
+                            .param("lng", point[1])
+                            .param("address", "1 Example Street, Woburn, MA 01801"))
+                    .andExpect(status().isBadRequest());
+        }
+        assertThat(auditRowCount()).isEqualTo(auditRows);
+
+        mockMvc.perform(get("/results")
+                        .param("lat", "39.825")
+                        .param("lng", "-84.055")
+                        .param("address", "1 Main St, Dayton, OH"))
+                .andExpect(status().isOk());
+        assertThat(auditRowCount()).isEqualTo(auditRows + 1);
+    }
+
+    @Test
     void statePage_metaDescriptionNamesState() throws Exception {
         String html = mockMvc.perform(get("/state/OH"))
                 .andExpect(status().isOk())
@@ -142,6 +174,11 @@ class PageRenderingIntegrationTest {
         assertThat(html).doesNotContain("viewModel.")
                 .contains("content=\"2 active EPA Superfund sites in Ohio. "
                         + "Enter your address to see how close you are to any of them.\"");
+    }
+
+    private int auditRowCount() {
+        Integer count = jdbcTemplate.queryForObject("SELECT count(*) FROM lookup_audit", Integer.class);
+        return count == null ? 0 : count;
     }
 
     private void insertBoundary(String epaId, String siteName, String epaUrl) {
