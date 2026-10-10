@@ -1,6 +1,7 @@
 package com.siteplain.data.repository;
 
 import java.sql.Timestamp;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
@@ -62,25 +63,47 @@ public class HumanExposureRepository {
     }
 
     /**
-     * How many sites active_npl_sites would hold after the swap: the same rule as the view (feed
-     * status, else the boundary status, equal to 'F'), read against staging for each source that is
-     * being replaced and against live for the other.
+     * The sites active_npl_sites would hold after the swap: the same rule as the view (feed status,
+     * else the boundary status, equal to 'F'), read against staging for each source that is being
+     * replaced and against live for the other. Also counts how many of them have both a boundary and
+     * a feed row, which falls toward zero when one source's EPA IDs stop matching the other's.
      */
-    public int projectedActiveSiteCount(boolean boundariesStaged, boolean exposureStaged) {
+    public ProjectedActiveSites projectActiveSites(boolean boundariesStaged, boolean exposureStaged) {
         String boundaries = boundariesStaged ? "npl_site_boundaries_staging" : "npl_site_boundaries";
         String exposure = exposureStaged ? "npl_human_exposure_staging" : "npl_human_exposure";
-        Integer count = jdbcTemplate.queryForObject("""
-                SELECT count(*)
+        return jdbcTemplate.queryForObject("""
+                SELECT count(*) AS total,
+                       count(*) FILTER (WHERE s.epa_id IS NOT NULL AND h.epa_id IS NOT NULL) AS with_both
                 FROM %s s
                 FULL OUTER JOIN %s h ON h.epa_id = s.epa_id
                 WHERE COALESCE(h.npl_status, s.npl_status_code) = 'F'
-                """.formatted(boundaries, exposure), Integer.class);
-        return count == null ? 0 : count;
+                """.formatted(boundaries, exposure),
+                (rs, rowNum) -> new ProjectedActiveSites(rs.getInt("total"), rs.getInt("with_both")));
     }
 
     public int liveCount() {
         Integer count = jdbcTemplate.queryForObject("SELECT count(*) FROM npl_human_exposure", Integer.class);
         return count == null ? 0 : count;
+    }
+
+    /**
+     * True when the live rows are still the ones the refresh recorded: the same row count, and none
+     * written after the recorded load. A write by anything else (an older app version that reloads the
+     * feed on every boot, manual SQL) breaks this, so the next refresh stages the feed again even
+     * when the file is unchanged.
+     */
+    public boolean liveMatchesRecord(int recordedRowCount, Instant recordedLoadedAt) {
+        if (recordedLoadedAt == null) {
+            return false;
+        }
+        Boolean matches = jdbcTemplate.queryForObject("""
+                SELECT count(*) = ? AND count(*) > 0 AND max(loaded_at) <= ?
+                FROM npl_human_exposure
+                """, Boolean.class, recordedRowCount, Timestamp.from(recordedLoadedAt));
+        return Boolean.TRUE.equals(matches);
+    }
+
+    public record ProjectedActiveSites(int total, int withBoth) {
     }
 
     /**

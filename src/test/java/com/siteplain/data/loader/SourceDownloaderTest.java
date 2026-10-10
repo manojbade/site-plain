@@ -8,7 +8,10 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -143,6 +146,55 @@ class SourceDownloaderTest {
         assertThatThrownBy(() -> downloader.download(url("/stall-headers"), "Boundary file", TIMEOUT, 1000))
                 .hasMessageContaining("no response from " + url("/stall-headers") + " within 1 s");
         assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofSeconds(5));
+    }
+
+    @Test
+    void namesTheUrlAndTheCause_whenNothingListensOnThePort() throws Exception {
+        int port;
+        try (ServerSocket socket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+            port = socket.getLocalPort();
+        }
+        String closed = "http://127.0.0.1:" + port + "/e.json";
+
+        assertThatThrownBy(() -> downloader.download(closed, "Human exposure feed", TIMEOUT, 1000))
+                .isInstanceOf(IOException.class)
+                .hasMessage("Human exposure feed: could not connect to " + closed
+                        + ": ConnectException, caused by ClosedChannelException");
+        assertThat(tempDir).isEmptyDirectory();
+    }
+
+    @Test
+    void namesTheHost_whenItDoesNotResolve() {
+        String unresolvable = "https://nonexistent-host-siteplain.invalid/e.json";
+
+        assertThatThrownBy(() -> downloader.download(unresolvable, "Human exposure feed", TIMEOUT, 1000))
+                .hasMessageStartingWith("Human exposure feed: could not resolve the host of " + unresolvable + ": ")
+                .hasMessageContaining("UnresolvedAddressException");
+    }
+
+    @Test
+    void saysWhereTheTransferStopped_whenTheServerClosesMidBody() throws Exception {
+        try (ServerSocket socket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+            Thread serverThread = Thread.ofVirtual().start(() -> {
+                try (Socket client = socket.accept()) {
+                    client.getInputStream().read(new byte[4096]);
+                    OutputStream out = client.getOutputStream();
+                    out.write(("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 5000\r\n\r\n{"
+                            + "x".repeat(999)).getBytes(StandardCharsets.UTF_8));
+                    out.flush();
+                } catch (IOException ignored) {
+                    // The client sees the closed connection.
+                }
+            });
+            String truncated = "http://127.0.0.1:" + socket.getLocalPort() + "/b.geojson";
+
+            assertThatThrownBy(() -> downloader.download(truncated, "NPL boundary file", TIMEOUT, 10_000))
+                    .isInstanceOf(IOException.class)
+                    .hasMessageStartingWith("NPL boundary file: download from " + truncated + " failed after 1000 of 5000 bytes: ")
+                    .hasMessageContaining("IOException");
+            serverThread.join();
+        }
+        assertThat(tempDir).isEmptyDirectory();
     }
 
     @Test

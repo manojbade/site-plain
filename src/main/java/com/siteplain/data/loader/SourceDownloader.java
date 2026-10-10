@@ -3,11 +3,15 @@ package com.siteplain.data.loader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.ConnectException;
 import java.net.URI;
+import java.net.UnknownHostException;
 import java.net.http.HttpClient;
+import java.net.http.HttpConnectTimeoutException;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
+import java.nio.channels.UnresolvedAddressException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -69,13 +73,14 @@ public class SourceDownloader {
                     lastModified = response.headers().firstValue("Last-Modified")
                             .map(SourceDownloader::parseHttpDate)
                             .orElse(null);
+                    long declared = response.headers().firstValueAsLong("Content-Length").orElse(-1);
                     Duration remaining = timeout.minusNanos(System.nanoTime() - started);
-                    copied = copy(body, temp, label, sourceUrl, maxBytes, timeout, remaining);
+                    copied = copy(body, temp, label, sourceUrl, maxBytes, declared, timeout, remaining);
                 }
             } else {
                 Path source = "file".equalsIgnoreCase(uri.getScheme()) ? Path.of(uri) : Path.of(sourceUrl);
                 try (InputStream in = Files.newInputStream(source)) {
-                    copied = copy(in, temp, label, sourceUrl, maxBytes, null, null);
+                    copied = copy(in, temp, label, sourceUrl, maxBytes, -1, null, null);
                 } catch (java.nio.file.NoSuchFileException e) {
                     throw new IOException(label + ": file not found: " + source, e);
                 }
@@ -102,8 +107,19 @@ public class SourceDownloader {
                 .build();
         try {
             return httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
+        } catch (HttpConnectTimeoutException e) {
+            throw new IOException(label + ": could not connect to " + sourceUrl + " within "
+                    + seconds(httpClient.connectTimeout().orElse(null)), e);
         } catch (HttpTimeoutException e) {
             throw new IOException(label + ": no response from " + sourceUrl + " within " + seconds(timeout), e);
+        } catch (ConnectException e) {
+            String what = hasCause(e, UnresolvedAddressException.class, UnknownHostException.class)
+                    ? "could not resolve the host of " : "could not connect to ";
+            throw new IOException(label + ": " + what + sourceUrl + ": " + summarize(e), e);
+        } catch (IOException e) {
+            // The JDK client often throws with a null message (a refused connection is a
+            // ConnectException caused by a ClosedChannelException), so name the exception chain.
+            throw new IOException(label + ": request to " + sourceUrl + " failed: " + summarize(e), e);
         }
     }
 
@@ -130,7 +146,7 @@ public class SourceDownloader {
      * Streams to the temp file. With a deadline, a watchdog closes the stream when it passes, which
      * ends a read that is blocked on a stalled transfer.
      */
-    private Copied copy(InputStream in, Path temp, String label, String sourceUrl, long maxBytes,
+    private Copied copy(InputStream in, Path temp, String label, String sourceUrl, long maxBytes, long declared,
                         Duration timeout, Duration remaining) throws IOException {
         MessageDigest digest = sha256();
         AtomicBoolean finished = new AtomicBoolean(false);
@@ -145,6 +161,7 @@ public class SourceDownloader {
             });
         }
         long total = 0;
+        boolean overLimit = false;
         IOException failure = null;
         try (OutputStream out = Files.newOutputStream(temp)) {
             byte[] buffer = new byte[64 * 1024];
@@ -152,7 +169,8 @@ public class SourceDownloader {
             while ((read = in.read(buffer)) != -1) {
                 total += read;
                 if (total > maxBytes) {
-                    throw new IOException(label + ": " + sourceUrl + " is larger than the " + maxBytes + "-byte limit");
+                    overLimit = true;
+                    break;
                 }
                 digest.update(buffer, 0, read);
                 out.write(buffer, 0, read);
@@ -165,8 +183,13 @@ public class SourceDownloader {
         if (!finished.compareAndSet(false, true) && timedOut.get()) {
             throw timeout(label, sourceUrl, timeout, total, failure);
         }
+        if (overLimit) {
+            throw new IOException(label + ": " + sourceUrl + " is larger than the " + maxBytes + "-byte limit");
+        }
         if (failure != null) {
-            throw failure;
+            // A transfer cut off mid-body surfaces as a bare "closed" or similar, so say where it stopped.
+            throw new IOException(label + ": download from " + sourceUrl + " failed after " + total
+                    + (declared >= 0 ? " of " + declared : "") + " bytes: " + summarize(failure), failure);
         }
         return new Copied(total, HexFormat.of().formatHex(digest.digest()));
     }
@@ -220,6 +243,35 @@ public class SourceDownloader {
             log.warn("Ignoring unparseable Last-Modified header '{}'", value);
             return null;
         }
+    }
+
+    /**
+     * Names an exception and its causes, for messages and data_source_state.last_error, since many
+     * JDK network exceptions have a null message: "ConnectException, caused by ClosedChannelException".
+     */
+    public static String summarize(Throwable error) {
+        StringBuilder text = new StringBuilder();
+        String previous = null;
+        for (Throwable t = error; t != null; t = t.getCause() == t ? null : t.getCause()) {
+            String part = t.getClass().getSimpleName() + (t.getMessage() == null ? "" : " (" + t.getMessage() + ")");
+            if (!part.equals(previous)) {
+                text.append(text.isEmpty() ? "" : ", caused by ").append(part);
+            }
+            previous = part;
+        }
+        return text.toString();
+    }
+
+    @SafeVarargs
+    private static boolean hasCause(Throwable error, Class<? extends Throwable>... types) {
+        for (Throwable t = error; t != null; t = t.getCause() == t ? null : t.getCause()) {
+            for (Class<? extends Throwable> type : types) {
+                if (type.isInstance(t)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static String seconds(Duration timeout) {

@@ -20,6 +20,10 @@ public class DataProperties {
     private DataSize boundariesMaxSize = DataSize.ofMegabytes(240);
     private Duration humanExposureDownloadTimeout = Duration.ofSeconds(60);
     private DataSize humanExposureMaxSize = DataSize.ofMegabytes(6);
+    // Operator override for the 5% active-site change gate: a refresh whose projected active site
+    // count equals this number is accepted even when it moves more than 5%. Any other count is still
+    // gated, so a value left set stops mattering once that change is live.
+    private Integer acceptActiveCount;
 
     public boolean isBootstrapEnabled() {
         return bootstrapEnabled;
@@ -91,5 +95,13 @@ public class DataProperties {
 
     public void setHumanExposureMaxSize(DataSize humanExposureMaxSize) {
         this.humanExposureMaxSize = humanExposureMaxSize;
+    }
+
+    public Integer getAcceptActiveCount() {
+        return acceptActiveCount;
+    }
+
+    public void setAcceptActiveCount(Integer acceptActiveCount) {
+        this.acceptActiveCount = acceptActiveCount;
     }
 }

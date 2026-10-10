@@ -65,6 +65,7 @@ class DataRefreshIntegrationTest {
         original.setNplBoundariesUrl(dataProperties.getNplBoundariesUrl());
         original.setHumanExposureUrl(dataProperties.getHumanExposureUrl());
         original.setRefreshOnStartup(dataProperties.isRefreshOnStartup());
+        original.setAcceptActiveCount(dataProperties.getAcceptActiveCount());
         clearAll();
     }
 
@@ -73,6 +74,7 @@ class DataRefreshIntegrationTest {
         dataProperties.setNplBoundariesUrl(original.getNplBoundariesUrl());
         dataProperties.setHumanExposureUrl(original.getHumanExposureUrl());
         dataProperties.setRefreshOnStartup(original.isRefreshOnStartup());
+        dataProperties.setAcceptActiveCount(original.getAcceptActiveCount());
         clearAll();
         sitemapService.rebuild();
     }
@@ -198,6 +200,113 @@ class DataRefreshIntegrationTest {
                 .isEqualTo("NPL boundary file: file not found: /nonexistent/release/npl_site_boundaries.geojson");
         assertThat(status("human_exposure").get("last_error")).isEqualTo("Human exposure feed: file not found: /nonexistent/feed.json");
         assertThat(sitemapService.currentSitemap()).contains("/site/" + RefreshFixtures.epaId(0));
+    }
+
+    @Test
+    void unreachableHttpSource_recordsWhereAndWhy() throws Exception {
+        load("OLD", true);
+        int port;
+        try (java.net.ServerSocket socket = new java.net.ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress())) {
+            port = socket.getLocalPort();
+        }
+        String closed = "http://127.0.0.1:" + port + "/e.json";
+        dataProperties.setHumanExposureUrl(closed);
+
+        dataBootstrapService.refresh(false);
+
+        assertThat(namesLike("npl_human_exposure", "OLD")).isEqualTo(RefreshFixtures.SITES);
+        assertThat(status("human_exposure")).containsEntry("last_status", "FAILED")
+                .containsEntry("last_error", "Human exposure feed: could not connect to " + closed
+                        + ": ConnectException, caused by ClosedChannelException");
+    }
+
+    @Test
+    void feedWhoseIdsDoNotMatchTheBoundaries_isRejected_andTheActiveSetStays() throws Exception {
+        load("OLD", true);
+        Path feed = dir.resolve("other-ids.json");
+        // What a switch to another ID column looks like: the same feed, no epaid matching a boundary.
+        Files.writeString(feed, Files.readString(RefreshFixtures.writeExposure(dir.resolve("e.json"), "NEW"))
+                .replace("\"epaid\":\"GAR", "\"epaid\":\"GAX"));
+        dataProperties.setHumanExposureUrl(feed.toUri().toString());
+
+        dataBootstrapService.refresh(false);
+
+        assertThat(namesLike("npl_human_exposure", "OLD")).isEqualTo(RefreshFixtures.SITES);
+        assertThat(nplBoundaryRepository.countActiveSites()).isEqualTo(RefreshFixtures.FINAL_SITES);
+        assertThat(status("human_exposure")).containsEntry("last_status", "FAILED")
+                .containsEntry("last_error", "Only 0 of " + 2 * RefreshFixtures.FINAL_SITES + " projected active sites "
+                        + "have both a boundary and an exposure feed row, under 90%: the EPA IDs in the boundary file "
+                        + "and the feed do not match");
+        assertThat(count("npl_human_exposure_staging")).isZero();
+    }
+
+    @Test
+    void boundaryFileWhoseIdsDoNotMatchTheFeed_isRejected_andLiveBoundariesStay() throws Exception {
+        load("OLD", true);
+        Path boundaries = dir.resolve("other-ids.geojson");
+        Files.writeString(boundaries, Files.readString(RefreshFixtures.writeBoundaries(dir.resolve("b.geojson"), "NEW"))
+                .replace("\"EPA_ID\":\"GAR", "\"EPA_ID\":\"GAX"));
+        dataProperties.setNplBoundariesUrl(boundaries.toUri().toString());
+
+        dataBootstrapService.refresh(false);
+
+        assertThat(namesLike("npl_site_boundaries", "OLD")).isEqualTo(RefreshFixtures.SITES);
+        assertThat(nplBoundaryRepository.countActiveSites()).isEqualTo(RefreshFixtures.FINAL_SITES);
+        assertThat(status("npl_boundaries")).containsEntry("last_status", "FAILED");
+        assertThat((String) status("npl_boundaries").get("last_error")).startsWith("Only 0 of ");
+    }
+
+    @Test
+    void inflatedLiveActiveSet_isRepairedOnlyWithTheExactCountOverride() throws Exception {
+        load("OLD", true);
+        // Live data from before the join gate: feed IDs that match no boundary double the active set.
+        jdbcTemplate.update("UPDATE npl_human_exposure SET epa_id = replace(epa_id, 'GAR', 'GAX')");
+        assertThat(nplBoundaryRepository.countActiveSites()).isEqualTo(2 * RefreshFixtures.FINAL_SITES);
+        dataProperties.setHumanExposureUrl(RefreshFixtures.writeExposure(dir.resolve("fixed.json"), "NEW").toUri().toString());
+
+        dataBootstrapService.refresh(true);
+
+        assertThat(namesLike("npl_human_exposure", "OLD")).isEqualTo(RefreshFixtures.SITES);
+        assertThat(status("human_exposure").get("last_error")).isEqualTo("Active site count would drop from "
+                + 2 * RefreshFixtures.FINAL_SITES + " to " + RefreshFixtures.FINAL_SITES + ", more than 5%. If this change "
+                + "is expected, set SITEPLAIN_DATA_ACCEPT_ACTIVE_COUNT=" + RefreshFixtures.FINAL_SITES + " for the next boot");
+
+        dataProperties.setAcceptActiveCount(RefreshFixtures.FINAL_SITES);
+        dataBootstrapService.refresh(true);
+
+        assertThat(namesLike("npl_human_exposure", "NEW")).isEqualTo(RefreshFixtures.SITES);
+        assertThat(nplBoundaryRepository.countActiveSites()).isEqualTo(RefreshFixtures.FINAL_SITES);
+        assertThat(count("site_seo_page_cache")).isEqualTo(RefreshFixtures.FINAL_SITES);
+        assertThat(status("human_exposure")).containsEntry("last_status", "LOADED");
+    }
+
+    @Test
+    void unchangedFeed_isStagedAgain_whenSomethingElseRewroteTheLiveRows() throws Exception {
+        load("OLD", true);
+        Object recordedLoadedAt = status("human_exposure").get("loaded_at");
+        // An older app version reloads the feed on every boot and keeps only rows with a boundary.
+        jdbcTemplate.update("DELETE FROM npl_human_exposure WHERE epa_id IN (?, ?)",
+                RefreshFixtures.epaId(0), RefreshFixtures.epaId(1));
+
+        dataBootstrapService.refresh(false);
+
+        assertThat(count("npl_human_exposure")).isEqualTo(RefreshFixtures.SITES);
+        Map<String, Object> restaged = status("human_exposure");
+        assertThat(restaged).containsEntry("last_status", "LOADED").containsEntry("row_count", RefreshFixtures.SITES);
+        assertThat((java.sql.Timestamp) restaged.get("loaded_at")).isAfter((java.sql.Timestamp) recordedLoadedAt);
+
+        // Same row count, but written after the recorded load.
+        jdbcTemplate.update("UPDATE npl_human_exposure SET state_code = NULL, loaded_at = now() + interval '1 minute'");
+
+        dataBootstrapService.refresh(false);
+
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM npl_human_exposure WHERE state_code = 'GA'",
+                Integer.class)).isEqualTo(RefreshFixtures.SITES);
+        assertThat(status("human_exposure")).containsEntry("last_status", "LOADED");
+
+        // Untouched since: unchanged again.
+        dataBootstrapService.refresh(false);
+        assertThat(status("human_exposure")).containsEntry("last_status", "UNCHANGED");
     }
 
     @Test

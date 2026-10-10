@@ -23,6 +23,7 @@ import com.siteplain.data.loader.SourceDownloader;
 import com.siteplain.data.loader.StatePageCacheBuilder;
 import com.siteplain.data.repository.DataSourceRepository;
 import com.siteplain.data.repository.HumanExposureRepository;
+import com.siteplain.data.repository.HumanExposureRepository.ProjectedActiveSites;
 import com.siteplain.data.repository.NplBoundaryRepository;
 import com.siteplain.data.repository.SeoPageRepository;
 import com.siteplain.data.repository.StatePageRepository;
@@ -39,38 +40,83 @@ class DataBootstrapServiceTest {
 
     @Test
     void checkExposureStatuses_acceptsTheRealFeedMix() {
-        assertThatCode(() -> DataBootstrapService.checkExposureStatuses(REAL_FEED, 1343, 1328))
+        assertThatCode(() -> DataBootstrapService.checkExposureStatuses(REAL_FEED, real(1343), 1328, null))
                 .doesNotThrowAnyException();
         // First load into an empty database: no live count to compare against.
-        assertThatCode(() -> DataBootstrapService.checkExposureStatuses(REAL_FEED, 1343, 0))
+        assertThatCode(() -> DataBootstrapService.checkExposureStatuses(REAL_FEED, real(1343), 0, null))
                 .doesNotThrowAnyException();
     }
 
     @Test
     void checkExposureStatuses_rejectsAnUnknownStatusVocabulary() {
         assertThatThrownBy(() -> DataBootstrapService.checkExposureStatuses(
-                Map.of("Final", 1337, "Deleted", 466), 21, 1343))
+                Map.of("Final", 1337, "Deleted", 466), real(21), 1343, null))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("unknown nplstatus values: [Deleted, Final]");
         assertThatThrownBy(() -> DataBootstrapService.checkExposureStatuses(
-                Map.of("F", 1336, "D", 466, "X", 1), 1342, 1343))
+                Map.of("F", 1336, "D", 466, "X", 1), real(1342), 1343, null))
                 .hasMessageContaining("[X]");
     }
 
     @Test
     void checkExposureStatuses_rejectsAFinalCountOutsideTheBand() {
-        assertThatThrownBy(() -> DataBootstrapService.checkExposureStatuses(Map.of("F", 900, "D", 1000), 910, 0))
+        assertThatThrownBy(() -> DataBootstrapService.checkExposureStatuses(Map.of("F", 900, "D", 1000), real(910), 0, null))
                 .hasMessageContaining("Final count 900 is outside the expected band 1200..1450");
-        assertThatThrownBy(() -> DataBootstrapService.checkExposureStatuses(Map.of("F", 1800), 1800, 0))
+        assertThatThrownBy(() -> DataBootstrapService.checkExposureStatuses(Map.of("F", 1800), real(1800), 0, null))
                 .hasMessageContaining("Final count 1800");
     }
 
     @Test
     void checkExposureStatuses_rejectsALargeDropInActiveSites() {
-        assertThatThrownBy(() -> DataBootstrapService.checkExposureStatuses(REAL_FEED, 1260, 1343))
+        assertThatThrownBy(() -> DataBootstrapService.checkExposureStatuses(REAL_FEED, real(1260), 1343, null))
                 .hasMessageContaining("Active site count would drop from 1343 to 1260");
-        assertThatCode(() -> DataBootstrapService.checkExposureStatuses(REAL_FEED, 1280, 1343))
+        assertThatCode(() -> DataBootstrapService.checkExposureStatuses(REAL_FEED, real(1280), 1343, null))
                 .doesNotThrowAnyException();
+    }
+
+    @Test
+    void checkExposureStatuses_rejectsALargeRiseInActiveSites() {
+        assertThatThrownBy(() -> DataBootstrapService.checkExposureStatuses(REAL_FEED, real(2665), 1337, null))
+                .hasMessage("Active site count would rise from 1337 to 2665, more than 5%. If this change is expected, "
+                        + "set SITEPLAIN_DATA_ACCEPT_ACTIVE_COUNT=2665 for the next boot");
+        assertThatCode(() -> DataBootstrapService.checkExposureStatuses(REAL_FEED, real(1400), 1337, null))
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> DataBootstrapService.checkExposureStatuses(REAL_FEED, real(1410), 1337, null))
+                .hasMessageContaining("would rise from 1337 to 1410");
+    }
+
+    @Test
+    void checkExposureStatuses_rejectsSourcesWhoseIdsDoNotJoin() {
+        assertThatThrownBy(() -> DataBootstrapService.checkExposureStatuses(REAL_FEED,
+                new ProjectedActiveSites(2665, 0), 1337, 2665))
+                .hasMessage("Only 0 of 2665 projected active sites have both a boundary and an exposure feed row, "
+                        + "under 90%: the EPA IDs in the boundary file and the feed do not match");
+        // Real data: 1,322 of 1,337.
+        assertThatCode(() -> DataBootstrapService.checkExposureStatuses(REAL_FEED,
+                new ProjectedActiveSites(1337, 1322), 1337, null)).doesNotThrowAnyException();
+        assertThatThrownBy(() -> DataBootstrapService.checkExposureStatuses(REAL_FEED,
+                new ProjectedActiveSites(1337, 1200), 1337, null)).hasMessageContaining("Only 1200 of 1337");
+    }
+
+    @Test
+    void checkProjectedActiveSites_skipsTheJoinWhenTheOtherSideIsEmpty() {
+        assertThatCode(() -> DataBootstrapService.checkProjectedActiveSites(
+                new ProjectedActiveSites(1328, 0), 1328, null, false)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void checkActiveSiteChange_acceptsOnlyTheExactCountTheOperatorNamed() {
+        assertThatCode(() -> DataBootstrapService.checkActiveSiteChange(1337, 2665, 1337)).doesNotThrowAnyException();
+        assertThatThrownBy(() -> DataBootstrapService.checkActiveSiteChange(1338, 2665, 1337))
+                .hasMessage("Active site count would drop from 2665 to 1338, more than 5%. If this change is expected, "
+                        + "set SITEPLAIN_DATA_ACCEPT_ACTIVE_COUNT=1338 for the next boot");
+        // Within 5% the override plays no part.
+        assertThatCode(() -> DataBootstrapService.checkActiveSiteChange(1340, 1337, 99)).doesNotThrowAnyException();
+    }
+
+    /** A projection in which every active site has a boundary and a feed row. */
+    private static ProjectedActiveSites real(int total) {
+        return new ProjectedActiveSites(total, total);
     }
 
     @Test
@@ -95,7 +141,7 @@ class DataBootstrapServiceTest {
         when(downloader.download(anyString(), anyString(), any(), anyLong()))
                 .thenReturn(new DownloadedFile("file:///feed.json", Path.of("/nonexistent/feed.json"), 10, "ab", null));
         when(exposureRepository.stagingStatusCounts()).thenReturn(Map.of("FINAL", 1337, "DELETED", 466, "NOT NPL", 102));
-        when(exposureRepository.projectedActiveSiteCount(false, true)).thenReturn(0);
+        when(exposureRepository.projectActiveSites(false, true)).thenReturn(new ProjectedActiveSites(0, 0));
         when(boundaryRepository.countActiveSites()).thenReturn(1343);
 
         DataBootstrapService service = new DataBootstrapService(properties, policy, mock(DataSourceRepository.class),
@@ -168,5 +214,13 @@ class DataBootstrapServiceTest {
                 .isEqualTo("Human exposure feed: HTTP 503 from x");
         assertThat(DataBootstrapService.describe(new IllegalArgumentException("bad")))
                 .isEqualTo("IllegalArgumentException: bad");
+    }
+
+    @Test
+    void describe_namesTheExceptionChainWhenThereIsNoMessage() {
+        java.net.ConnectException refused = new java.net.ConnectException();
+        refused.initCause(new java.nio.channels.ClosedChannelException());
+        assertThat(DataBootstrapService.describe(refused)).isEqualTo("ConnectException, caused by ClosedChannelException");
+        assertThat(DataBootstrapService.describe(new IllegalStateException())).isEqualTo("IllegalStateException");
     }
 }

@@ -113,11 +113,11 @@ class ActiveSiteDefinitionIntegrationTest {
         // Staging still holds the fixture feed after the swap, so its projected active count must
         // equal the view's count, and the status counts are the fixture's (lowercase f uppercased).
         assertThat(humanExposureRepository.stagingStatusCounts()).containsExactly(Map.entry("D", 2), Map.entry("F", 5));
-        assertThat(humanExposureRepository.projectedActiveSiteCount(false, true)).isEqualTo(nplBoundaryRepository.countActiveSites());
+        assertThat(humanExposureRepository.projectActiveSites(false, true).total()).isEqualTo(nplBoundaryRepository.countActiveSites());
 
         jdbcTemplate.update("UPDATE npl_human_exposure_staging SET npl_status = 'FINAL' WHERE npl_status = 'F'");
         assertThat(humanExposureRepository.stagingStatusCounts()).containsKey("FINAL").doesNotContainKey("F");
-        assertThat(humanExposureRepository.projectedActiveSiteCount(false, true))
+        assertThat(humanExposureRepository.projectActiveSites(false, true).total())
                 .isEqualTo(nplBoundaryRepository.countActiveSites() - 5);
     }
 

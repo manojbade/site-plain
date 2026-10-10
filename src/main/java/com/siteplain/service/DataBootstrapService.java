@@ -13,6 +13,7 @@ import com.siteplain.data.loader.StatePageCacheBuilder;
 import com.siteplain.data.repository.DataSourceRepository;
 import com.siteplain.data.repository.DataSourceRepository.DataSourceRecord;
 import com.siteplain.data.repository.HumanExposureRepository;
+import com.siteplain.data.repository.HumanExposureRepository.ProjectedActiveSites;
 import com.siteplain.data.repository.NplBoundaryRepository;
 import com.siteplain.data.repository.SeoPageRepository;
 import com.siteplain.data.repository.StatePageRepository;
@@ -46,6 +47,10 @@ public class DataBootstrapService implements ApplicationRunner {
     static final int MIN_FEED_FINAL = 1200;
     static final int MAX_FEED_FINAL = 1450;
     static final double MIN_ACTIVE_RATIO = 0.95;
+    static final double MAX_ACTIVE_RATIO = 1.05;
+    // Share of projected active sites that must have both a boundary and a feed row. On real data
+    // 1,322 of 1,337 do (98.9%); a source whose EPA IDs stop matching takes it toward 0%.
+    static final double MIN_JOINED_RATIO = 0.90;
     static final String NPL_BOUNDARY_FILE = "NPL boundary file";
     static final String HUMAN_EXPOSURE_FEED = "Human exposure feed";
 
@@ -161,8 +166,10 @@ public class DataBootstrapService implements ApplicationRunner {
         }
         if (boundaries != null && exposure == null) {
             try {
-                checkActiveSiteDrop(humanExposureRepository.projectedActiveSiteCount(true, false),
-                        nplBoundaryRepository.countActiveSites());
+                // With no live feed rows there is nothing for the boundary IDs to match yet.
+                checkProjectedActiveSites(humanExposureRepository.projectActiveSites(true, false),
+                        nplBoundaryRepository.countActiveSites(), dataProperties.getAcceptActiveCount(),
+                        humanExposureRepository.liveCount() > 0);
             } catch (IllegalStateException e) {
                 sourceFailed(DataSourceRepository.BOUNDARIES, NPL_BOUNDARY_FILE, e, firstBoot);
                 boundaries = null;
@@ -229,6 +236,10 @@ public class DataBootstrapService implements ApplicationRunner {
     }
 
     static String describe(Exception e) {
+        if (e.getMessage() == null) {
+            // Never record a bare "null": name the exception and its causes instead.
+            return SourceDownloader.summarize(e);
+        }
         if (e instanceof SourceRejectedException || e instanceof IOException || e instanceof IllegalStateException) {
             return e.getMessage();
         }
@@ -273,10 +284,14 @@ public class DataBootstrapService implements ApplicationRunner {
         try (DownloadedFile file = sourceDownloader.download(url, HUMAN_EXPOSURE_FEED,
                 dataProperties.getHumanExposureDownloadTimeout(), dataProperties.getHumanExposureMaxSize().toBytes())) {
             DataSourceRecord live = dataSourceRepository.find(DataSourceRepository.EXPOSURE).orElse(null);
-            if (live != null && file.sha256().equals(live.sha256()) && url.equals(live.sourceUrl())
-                    && humanExposureRepository.liveCount() > 0) {
-                log.info("Human exposure feed unchanged (sha256 {}); keeping the live rows", file.sha256());
-                return null;
+            if (live != null && file.sha256().equals(live.sha256()) && url.equals(live.sourceUrl())) {
+                if (live.rowCount() != null && humanExposureRepository.liveMatchesRecord(live.rowCount(), live.loadedAt())) {
+                    log.info("Human exposure feed unchanged (sha256 {}); keeping the live rows", file.sha256());
+                    return null;
+                }
+                log.warn("Human exposure feed unchanged (sha256 {}), but the live rows ({}) no longer match the {} "
+                        + "recorded at {}: something else wrote npl_human_exposure. Staging the feed again",
+                        file.sha256(), humanExposureRepository.liveCount(), live.rowCount(), live.loadedAt());
             }
             ExposureFeedStats stats = humanExposureLoader.loadIntoStaging(file.path());
             List<String> problems = stats.problems();
@@ -289,8 +304,8 @@ public class DataBootstrapService implements ApplicationRunner {
             }
             Map<String, Integer> statusCounts = humanExposureRepository.stagingStatusCounts();
             checkExposureStatuses(statusCounts,
-                    humanExposureRepository.projectedActiveSiteCount(boundariesStaged, true),
-                    nplBoundaryRepository.countActiveSites());
+                    humanExposureRepository.projectActiveSites(boundariesStaged, true),
+                    nplBoundaryRepository.countActiveSites(), dataProperties.getAcceptActiveCount());
             return new StagedSource(file, stats.staged(), statusCounts.getOrDefault("F", 0));
         }
     }
@@ -362,7 +377,8 @@ public class DataBootstrapService implements ApplicationRunner {
     }
 
     /** Throws, before anything live changes, when the staged feed would publish a wrong active site set. */
-    static void checkExposureStatuses(Map<String, Integer> statusCounts, int stagingActiveCount, int liveActiveCount) {
+    static void checkExposureStatuses(Map<String, Integer> statusCounts, ProjectedActiveSites projected,
+                                      int liveActiveCount, Integer acceptActiveCount) {
         Set<String> unknown = new TreeSet<>(statusCounts.keySet());
         unknown.removeAll(KNOWN_NPL_STATUSES);
         if (!unknown.isEmpty()) {
@@ -373,14 +389,46 @@ public class DataBootstrapService implements ApplicationRunner {
             throw new IllegalStateException("Human exposure feed Final count " + finalCount
                     + " is outside the expected band " + MIN_FEED_FINAL + ".." + MAX_FEED_FINAL);
         }
-        checkActiveSiteDrop(stagingActiveCount, liveActiveCount);
+        checkProjectedActiveSites(projected, liveActiveCount, acceptActiveCount, true);
     }
 
-    /** Throws when the staged data would cut the active site count by more than 5%. */
-    static void checkActiveSiteDrop(int stagingActiveCount, int liveActiveCount) {
-        if (liveActiveCount > 0 && stagingActiveCount < liveActiveCount * MIN_ACTIVE_RATIO) {
-            throw new IllegalStateException("Active site count would drop from " + liveActiveCount
-                    + " to " + stagingActiveCount + ", more than " + Math.round((1 - MIN_ACTIVE_RATIO) * 100) + "%");
+    /**
+     * Throws when the staged data would publish a wrong active site set: when too few of the projected
+     * active sites have both a boundary and a feed row (one source's EPA IDs no longer match the
+     * other's, which adds unmatched sites from both sides instead of removing any), or when the count
+     * moves more than 5% either way from what is live.
+     */
+    static void checkProjectedActiveSites(ProjectedActiveSites projected, int liveActiveCount,
+                                          Integer acceptActiveCount, boolean checkJoin) {
+        if (checkJoin && projected.total() > 0 && projected.withBoth() < projected.total() * MIN_JOINED_RATIO) {
+            throw new IllegalStateException("Only " + projected.withBoth() + " of " + projected.total()
+                    + " projected active sites have both a boundary and an exposure feed row, under "
+                    + Math.round(MIN_JOINED_RATIO * 100) + "%: the EPA IDs in the boundary file and the feed do not match");
         }
+        checkActiveSiteChange(projected.total(), liveActiveCount, acceptActiveCount);
+    }
+
+    /**
+     * Throws when the staged data would move the active site count by more than 5% either way, unless
+     * SITEPLAIN_DATA_ACCEPT_ACTIVE_COUNT names exactly the new count.
+     */
+    static void checkActiveSiteChange(int stagingActiveCount, int liveActiveCount, Integer acceptActiveCount) {
+        if (liveActiveCount <= 0) {
+            return;
+        }
+        boolean drop = stagingActiveCount < liveActiveCount * MIN_ACTIVE_RATIO;
+        boolean rise = stagingActiveCount > liveActiveCount * MAX_ACTIVE_RATIO;
+        if (!drop && !rise) {
+            return;
+        }
+        String change = "Active site count would " + (drop ? "drop" : "rise") + " from " + liveActiveCount
+                + " to " + stagingActiveCount + ", more than " + Math.round((1 - MIN_ACTIVE_RATIO) * 100) + "%";
+        if (acceptActiveCount != null && acceptActiveCount == stagingActiveCount) {
+            log.warn("{}; accepted because SITEPLAIN_DATA_ACCEPT_ACTIVE_COUNT={}. Unset it once this refresh is live",
+                    change, acceptActiveCount);
+            return;
+        }
+        throw new IllegalStateException(change + ". If this change is expected, set SITEPLAIN_DATA_ACCEPT_ACTIVE_COUNT="
+                + stagingActiveCount + " for the next boot");
     }
 }
