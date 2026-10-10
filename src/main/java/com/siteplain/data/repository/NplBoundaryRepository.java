@@ -33,6 +33,12 @@ public class NplBoundaryRepository {
         return queryCount("npl_site_boundaries");
     }
 
+    public int liveFinalCount() {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM npl_site_boundaries WHERE npl_status_code = 'F'", Integer.class);
+        return count == null ? 0 : count;
+    }
+
     public boolean liveDataPresent() {
         return liveCount() > 0;
     }

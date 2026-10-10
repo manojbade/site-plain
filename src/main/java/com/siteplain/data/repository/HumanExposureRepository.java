@@ -62,27 +62,40 @@ public class HumanExposureRepository {
     }
 
     /**
-     * How many sites active_npl_sites would hold if staging were swapped in now: the same rule as
-     * the view (feed status, else the boundary status, equal to 'F'), read against the staged
-     * exposure feed and against staged boundaries when boundaries are being reloaded too.
+     * How many sites active_npl_sites would hold after the swap: the same rule as the view (feed
+     * status, else the boundary status, equal to 'F'), read against staging for each source that is
+     * being replaced and against live for the other.
      */
-    public int stagingActiveSiteCount(boolean boundariesStaged) {
+    public int projectedActiveSiteCount(boolean boundariesStaged, boolean exposureStaged) {
         String boundaries = boundariesStaged ? "npl_site_boundaries_staging" : "npl_site_boundaries";
+        String exposure = exposureStaged ? "npl_human_exposure_staging" : "npl_human_exposure";
         Integer count = jdbcTemplate.queryForObject("""
                 SELECT count(*)
                 FROM %s s
-                FULL OUTER JOIN npl_human_exposure_staging h ON h.epa_id = s.epa_id
+                FULL OUTER JOIN %s h ON h.epa_id = s.epa_id
                 WHERE COALESCE(h.npl_status, s.npl_status_code) = 'F'
-                """.formatted(boundaries), Integer.class);
+                """.formatted(boundaries, exposure), Integer.class);
         return count == null ? 0 : count;
     }
 
-    /** When the exposure feed now in use was loaded, the as-of date for every exposure status shown. */
-    public Optional<LocalDate> lastLoadedDate() {
+    public int liveCount() {
+        Integer count = jdbcTemplate.queryForObject("SELECT count(*) FROM npl_human_exposure", Integer.class);
+        return count == null ? 0 : count;
+    }
+
+    /**
+     * The "EPA exposure status as of" date: the feed's HTTP Last-Modified (when EPA last changed the
+     * file) recorded for the live feed in data_source_state, as a UTC date. When the live feed was
+     * loaded without a Last-Modified header, or before data_source_state existed, it falls back to
+     * when the live rows were loaded (max loaded_at).
+     */
+    public Optional<LocalDate> statusAsOfDate() {
         List<LocalDate> rows = jdbcTemplate.query("""
-                SELECT max(loaded_at)::date AS loaded_date
-                FROM npl_human_exposure
-                """, (rs, rowNum) -> rs.getObject("loaded_date", LocalDate.class));
+                SELECT COALESCE(
+                  (SELECT (last_modified AT TIME ZONE 'UTC')::date
+                   FROM data_source_state WHERE dataset = 'human_exposure'),
+                  (SELECT max(loaded_at)::date FROM npl_human_exposure)) AS as_of
+                """, (rs, rowNum) -> rs.getObject("as_of", LocalDate.class));
         return rows.stream().filter(Objects::nonNull).findFirst();
     }
 

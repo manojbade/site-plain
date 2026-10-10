@@ -18,6 +18,7 @@ import com.siteplain.data.loader.NplBoundaryLoader;
 import com.siteplain.data.loader.SeoPageCacheBuilder;
 import com.siteplain.data.loader.SourceDownloader;
 import com.siteplain.data.loader.StatePageCacheBuilder;
+import com.siteplain.data.repository.DataSourceRepository;
 import com.siteplain.data.repository.HumanExposureRepository;
 import com.siteplain.data.repository.NplBoundaryRepository;
 import com.siteplain.data.repository.SeoPageRepository;
@@ -80,7 +81,8 @@ class DataBootstrapServiceTest {
         SeoPageCacheBuilder seoBuilder = mock(SeoPageCacheBuilder.class);
         StatePageCacheBuilder stateBuilder = mock(StatePageCacheBuilder.class);
         SitemapService sitemapService = mock(SitemapService.class);
-        when(policy.shouldRefreshBoundaries()).thenReturn(false);
+        when(policy.decideBoundaries(true)).thenReturn(
+                new DataRefreshPolicyService.BoundaryDecision(DataRefreshPolicyService.Action.KEEP, "test"));
         ExposureFeedStats stats = mock(ExposureFeedStats.class);
         when(stats.problems()).thenReturn(List.of());
         when(stats.staged()).thenReturn(1905);
@@ -90,15 +92,15 @@ class DataBootstrapServiceTest {
         when(downloader.download(anyString(), anyString(), any(), anyLong()))
                 .thenReturn(new DownloadedFile("file:///feed.json", Path.of("/nonexistent/feed.json"), 10, "ab", null));
         when(exposureRepository.stagingStatusCounts()).thenReturn(Map.of("FINAL", 1337, "DELETED", 466, "NOT NPL", 102));
-        when(exposureRepository.stagingActiveSiteCount(false)).thenReturn(0);
+        when(exposureRepository.projectedActiveSiteCount(false, true)).thenReturn(0);
         when(boundaryRepository.countActiveSites()).thenReturn(1343);
 
-        DataBootstrapService service = new DataBootstrapService(properties, policy, downloader, mock(NplBoundaryLoader.class), loader,
+        DataBootstrapService service = new DataBootstrapService(properties, policy, mock(DataSourceRepository.class), downloader, mock(NplBoundaryLoader.class), loader,
                 boundaryRepository, exposureRepository, seoBuilder, stateBuilder, mock(SeoPageRepository.class),
                 mock(StatePageRepository.class), sitemapService,
                 mock(PlatformTransactionManager.class));
 
-        assertThatThrownBy(service::refreshIfNeeded).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> service.refresh(true)).isInstanceOf(IllegalStateException.class);
         verify(exposureRepository, never()).replaceLiveFromStaging();
         verify(seoBuilder, never()).rebuild();
         verify(stateBuilder, never()).rebuild();

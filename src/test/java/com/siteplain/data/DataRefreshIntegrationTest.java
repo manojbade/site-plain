@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.siteplain.config.DataProperties;
 import com.siteplain.data.loader.SourceRejectedException;
+import com.siteplain.data.repository.HumanExposureRepository;
 import com.siteplain.data.repository.NplBoundaryRepository;
 import com.siteplain.service.DataBootstrapService;
 import com.siteplain.service.SitemapService;
@@ -41,6 +42,9 @@ class DataRefreshIntegrationTest {
 
     @Autowired
     private NplBoundaryRepository nplBoundaryRepository;
+
+    @Autowired
+    private HumanExposureRepository humanExposureRepository;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -135,7 +139,7 @@ class DataRefreshIntegrationTest {
         dataProperties.setHumanExposureUrl(badFeed.toUri().toString());
         dataProperties.setRefreshOnStartup(true);
 
-        assertThatThrownBy(dataBootstrapService::refreshIfNeeded).hasMessageContaining("unknown nplstatus");
+        assertThatThrownBy(() -> dataBootstrapService.refresh(true)).hasMessageContaining("unknown nplstatus");
 
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM npl_site_boundaries WHERE site_name LIKE 'OLD %'", Integer.class))
@@ -157,7 +161,7 @@ class DataRefreshIntegrationTest {
         dataProperties.setHumanExposureUrl(RefreshFixtures.writeExposure(dir.resolve("e.json"), "NEW").toUri().toString());
         dataProperties.setRefreshOnStartup(true);
 
-        assertThatThrownBy(dataBootstrapService::refreshIfNeeded)
+        assertThatThrownBy(() -> dataBootstrapService.refresh(true))
                 .isInstanceOf(SourceRejectedException.class)
                 .hasMessage("NPL boundary file rejected: 1 duplicate EPA_ID values (" + RefreshFixtures.epaId(0) + ")");
 
@@ -176,13 +180,124 @@ class DataRefreshIntegrationTest {
                 .isEqualTo("MULTIPOLYGON");
     }
 
+    @Test
+    void sameSources_keepBoundariesAndSkipTheExposureSwap_recordingWhatIsLive() throws Exception {
+        load("OLD", true);
+        Map<String, Object> exposure = jdbcTemplate.queryForMap(
+                "SELECT * FROM data_source_state WHERE dataset = 'human_exposure'");
+        assertThat(exposure.get("source_url")).isEqualTo(dataProperties.getHumanExposureUrl());
+        assertThat(exposure.get("sha256")).isEqualTo(sha256(Path.of(java.net.URI.create(dataProperties.getHumanExposureUrl()))));
+        assertThat(exposure.get("bytes")).isEqualTo(Files.size(Path.of(java.net.URI.create(dataProperties.getHumanExposureUrl()))));
+        assertThat(exposure.get("row_count")).isEqualTo(RefreshFixtures.SITES);
+        assertThat(exposure.get("final_count")).isEqualTo(RefreshFixtures.FINAL_SITES);
+        assertThat(exposure.get("last_status")).isEqualTo("LOADED");
+        assertThat(exposure.get("last_modified")).isNull();
+        Map<String, Object> boundaries = jdbcTemplate.queryForMap(
+                "SELECT * FROM data_source_state WHERE dataset = 'npl_boundaries'");
+        assertThat(boundaries.get("source_url")).isEqualTo(dataProperties.getNplBoundariesUrl());
+        assertThat(boundaries.get("final_count")).isEqualTo(RefreshFixtures.FINAL_SITES);
+        Object exposureLoadedAt = maxLoadedAt("npl_human_exposure");
+        Object boundariesLoadedAt = maxLoadedAt("npl_site_boundaries");
+        jdbcTemplate.update("DELETE FROM site_seo_page_cache WHERE epa_id = ?", RefreshFixtures.epaId(0));
+
+        dataProperties.setRefreshOnStartup(false);
+        dataBootstrapService.refresh(false);
+
+        assertThat(maxLoadedAt("npl_human_exposure")).isEqualTo(exposureLoadedAt);
+        assertThat(maxLoadedAt("npl_site_boundaries")).isEqualTo(boundariesLoadedAt);
+        // Nothing changed and this is not a startup, so not even the caches were rebuilt.
+        assertThat(count("site_seo_page_cache")).isEqualTo(RefreshFixtures.FINAL_SITES - 1);
+        Map<String, Object> checked = jdbcTemplate.queryForMap(
+                "SELECT * FROM data_source_state WHERE dataset = 'human_exposure'");
+        assertThat(checked.get("last_status")).isEqualTo("UNCHANGED");
+        assertThat(checked.get("sha256")).isEqualTo(exposure.get("sha256"));
+        assertThat((java.sql.Timestamp) checked.get("last_checked_at")).isAfter((java.sql.Timestamp) exposure.get("last_checked_at"));
+        assertThat(checked.get("loaded_at")).isEqualTo(exposure.get("loaded_at"));
+    }
+
+    @Test
+    void startupWithNothingChanged_stillRebuildsTheCaches() throws Exception {
+        load("OLD", true);
+        Object exposureLoadedAt = maxLoadedAt("npl_human_exposure");
+        jdbcTemplate.update("DELETE FROM site_seo_page_cache WHERE epa_id = ?", RefreshFixtures.epaId(0));
+
+        dataProperties.setRefreshOnStartup(false);
+        dataBootstrapService.refresh(true);
+
+        assertThat(count("site_seo_page_cache")).isEqualTo(RefreshFixtures.FINAL_SITES);
+        assertThat(maxLoadedAt("npl_human_exposure")).isEqualTo(exposureLoadedAt);
+    }
+
+    @Test
+    void changedBoundaryUrl_reloadsWithoutTheStartupFlag() throws Exception {
+        load("OLD", true);
+        Path newRelease = RefreshFixtures.writeBoundaries(dir.resolve("release-2.geojson"), "NEW");
+        dataProperties.setNplBoundariesUrl(newRelease.toUri().toString());
+        dataProperties.setRefreshOnStartup(false);
+
+        dataBootstrapService.refresh(false);
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM npl_site_boundaries WHERE site_name LIKE 'NEW %'", Integer.class))
+                .isEqualTo(RefreshFixtures.SITES);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT source_url FROM data_source_state WHERE dataset = 'npl_boundaries'", String.class))
+                .isEqualTo(newRelease.toUri().toString());
+    }
+
+    @Test
+    void liveBoundariesWithNoRecord_areAdoptedWithoutDownloading() throws Exception {
+        load("OLD", true);
+        Object boundariesLoadedAt = maxLoadedAt("npl_site_boundaries");
+        jdbcTemplate.update("DELETE FROM data_source_state");
+        // Unreadable on purpose: adopting must not download it.
+        String configured = "file:///nonexistent/release/npl_site_boundaries.geojson";
+        dataProperties.setNplBoundariesUrl(configured);
+        dataProperties.setRefreshOnStartup(false);
+
+        dataBootstrapService.refresh(true);
+
+        Map<String, Object> adopted = jdbcTemplate.queryForMap(
+                "SELECT * FROM data_source_state WHERE dataset = 'npl_boundaries'");
+        assertThat(adopted.get("last_status")).isEqualTo("ADOPTED");
+        assertThat(adopted.get("source_url")).isEqualTo(configured);
+        assertThat(adopted.get("sha256")).isNull();
+        assertThat(adopted.get("row_count")).isEqualTo(RefreshFixtures.SITES);
+        assertThat(adopted.get("final_count")).isEqualTo(RefreshFixtures.FINAL_SITES);
+        assertThat(adopted.get("loaded_at")).isNotNull();
+        assertThat(maxLoadedAt("npl_site_boundaries")).isEqualTo(boundariesLoadedAt);
+        // With the same URL configured, the next startup keeps the boundaries too.
+        dataBootstrapService.refresh(true);
+        assertThat(maxLoadedAt("npl_site_boundaries")).isEqualTo(boundariesLoadedAt);
+    }
+
+    @Test
+    void statusAsOfDate_prefersTheFeedLastModifiedThenTheLoadDate() throws Exception {
+        load("OLD", true);
+        // file:// sources have no Last-Modified, so the date is the load date.
+        assertThat(humanExposureRepository.statusAsOfDate()).contains(java.time.LocalDate.now());
+
+        jdbcTemplate.update("UPDATE data_source_state SET last_modified = TIMESTAMPTZ '2026-10-09 23:30:00+00' "
+                + "WHERE dataset = 'human_exposure'");
+        assertThat(humanExposureRepository.statusAsOfDate()).contains(java.time.LocalDate.of(2026, 10, 9));
+    }
+
+    private Object maxLoadedAt(String table) {
+        return jdbcTemplate.queryForObject("SELECT max(loaded_at) FROM " + table, Object.class);
+    }
+
+    private static String sha256(Path file) throws Exception {
+        return java.util.HexFormat.of().formatHex(
+                java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(file)));
+    }
+
     private void load(String namePrefix, boolean reloadBoundaries) throws Exception {
         Path boundaries = RefreshFixtures.writeBoundaries(dir.resolve(namePrefix + ".geojson"), namePrefix);
         Path exposure = RefreshFixtures.writeExposure(dir.resolve(namePrefix + ".json"), namePrefix);
         dataProperties.setNplBoundariesUrl(boundaries.toUri().toString());
         dataProperties.setHumanExposureUrl(exposure.toUri().toString());
         dataProperties.setRefreshOnStartup(reloadBoundaries);
-        dataBootstrapService.refreshIfNeeded();
+        dataBootstrapService.refresh(true);
     }
 
     private int count(String table) {
@@ -190,6 +305,7 @@ class DataRefreshIntegrationTest {
     }
 
     private void clearAll() {
+        jdbcTemplate.update("DELETE FROM data_source_state");
         jdbcTemplate.update("DELETE FROM site_seo_page_cache");
         jdbcTemplate.update("DELETE FROM state_page_cache");
         jdbcTemplate.update("DELETE FROM npl_human_exposure");

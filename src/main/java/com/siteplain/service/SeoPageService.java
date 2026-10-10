@@ -29,7 +29,7 @@ public class SeoPageService {
         return seoPageRepository.findByEpaId(epaId.toUpperCase(Locale.ROOT))
                 .map(pageData -> new SitePageViewModel(
                         pageData,
-                        DisplayDates.format(humanExposureRepository.lastLoadedDate().orElse(null))
+                        DisplayDates.format(humanExposureRepository.statusAsOfDate().orElse(null))
                 ));
     }
 

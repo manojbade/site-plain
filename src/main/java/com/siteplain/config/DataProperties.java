@@ -9,7 +9,9 @@ public class DataProperties {
 
     private boolean bootstrapEnabled = true;
     private boolean refreshOnStartup;
-    private int maxAgeDays = 90;
+    // Retired: boundaries reload by source identity (see DataRefreshPolicyService). Still bound so an
+    // existing SITEPLAIN_DATA_MAX_AGE_DAYS does not break startup; the bootstrap logs that it is ignored.
+    private Integer maxAgeDays;
     private String nplBoundariesUrl;
     private String humanExposureUrl = "https://www3.epa.gov/semsjson/Human_Exposure_Site_List.json";
     // Whole-download limits (headers and body). Caps are about 4x today's sizes: the boundary
@@ -35,11 +37,11 @@ public class DataProperties {
         this.refreshOnStartup = refreshOnStartup;
     }
 
-    public int getMaxAgeDays() {
+    public Integer getMaxAgeDays() {
         return maxAgeDays;
     }
 
-    public void setMaxAgeDays(int maxAgeDays) {
+    public void setMaxAgeDays(Integer maxAgeDays) {
         this.maxAgeDays = maxAgeDays;
     }
 

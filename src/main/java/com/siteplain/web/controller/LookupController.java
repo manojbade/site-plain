@@ -195,7 +195,7 @@ public class LookupController {
                 nplLookupService.findActiveSitesWithoutBoundary(stateCode),
                 nplLookupService.countActiveSitesWithoutBoundary(),
                 geocodedAddress.approximateMatch(),
-                DisplayDates.format(humanExposureRepository.lastLoadedDate().orElse(null))
+                DisplayDates.format(humanExposureRepository.statusAsOfDate().orElse(null))
         );
     }
 

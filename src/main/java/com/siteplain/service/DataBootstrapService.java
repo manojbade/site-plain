@@ -10,10 +10,16 @@ import com.siteplain.data.loader.SeoPageCacheBuilder;
 import com.siteplain.data.loader.SourceDownloader;
 import com.siteplain.data.loader.SourceRejectedException;
 import com.siteplain.data.loader.StatePageCacheBuilder;
+import com.siteplain.data.repository.DataSourceRepository;
+import com.siteplain.data.repository.DataSourceRepository.DataSourceRecord;
 import com.siteplain.data.repository.HumanExposureRepository;
 import com.siteplain.data.repository.NplBoundaryRepository;
 import com.siteplain.data.repository.SeoPageRepository;
 import com.siteplain.data.repository.StatePageRepository;
+import com.siteplain.service.DataRefreshPolicyService.Action;
+import com.siteplain.service.DataRefreshPolicyService.BoundaryDecision;
+import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -39,9 +45,12 @@ public class DataBootstrapService implements ApplicationRunner {
     static final int MIN_FEED_FINAL = 1200;
     static final int MAX_FEED_FINAL = 1450;
     static final double MIN_ACTIVE_RATIO = 0.95;
+    static final String NPL_BOUNDARY_FILE = "NPL boundary file";
+    static final String HUMAN_EXPOSURE_FEED = "Human exposure feed";
 
     private final DataProperties dataProperties;
     private final DataRefreshPolicyService dataRefreshPolicyService;
+    private final DataSourceRepository dataSourceRepository;
     private final SourceDownloader sourceDownloader;
     private final NplBoundaryLoader nplBoundaryLoader;
     private final HumanExposureLoader humanExposureLoader;
@@ -56,6 +65,7 @@ public class DataBootstrapService implements ApplicationRunner {
 
     public DataBootstrapService(DataProperties dataProperties,
                                 DataRefreshPolicyService dataRefreshPolicyService,
+                                DataSourceRepository dataSourceRepository,
                                 SourceDownloader sourceDownloader,
                                 NplBoundaryLoader nplBoundaryLoader,
                                 HumanExposureLoader humanExposureLoader,
@@ -69,6 +79,7 @@ public class DataBootstrapService implements ApplicationRunner {
                                 PlatformTransactionManager transactionManager) {
         this.dataProperties = dataProperties;
         this.dataRefreshPolicyService = dataRefreshPolicyService;
+        this.dataSourceRepository = dataSourceRepository;
         this.sourceDownloader = sourceDownloader;
         this.nplBoundaryLoader = nplBoundaryLoader;
         this.humanExposureLoader = humanExposureLoader;
@@ -84,72 +95,118 @@ public class DataBootstrapService implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) throws Exception {
+        if (dataProperties.getMaxAgeDays() != null) {
+            log.warn("SITEPLAIN_DATA_MAX_AGE_DAYS={} is ignored: boundaries reload only on first boot, with "
+                    + "SITEPLAIN_DATA_REFRESH_ON_STARTUP=true, or when SITEPLAIN_DATA_NPL_BOUNDARIES_URL changes",
+                    dataProperties.getMaxAgeDays());
+        }
         if (!dataProperties.isBootstrapEnabled()) {
             log.info("Site Plain bootstrap is disabled");
             return;
         }
-        refreshIfNeeded();
+        refresh(true);
     }
 
     /**
-     * Downloads, stages and validates every source first, then replaces boundaries (when reloading),
-     * exposure and both page caches in one transaction. A failure before commit leaves live data as it was.
+     * Downloads, stages and validates every changed source first, then replaces boundaries (when
+     * reloading), exposure (when the feed changed) and both page caches in one transaction. A failure
+     * before commit leaves live data as it was. At startup the caches are rebuilt even when no source
+     * changed, because a deploy can change how they are derived (labels, the active-site view).
      */
-    public void refreshIfNeeded() throws Exception {
-        boolean boundariesStaged = stageBoundariesIfNeeded();
-        int exposureCount = stageHumanExposure(boundariesStaged);
-        swapIntoLive(boundariesStaged, exposureCount);
+    public void refresh(boolean startup) throws Exception {
+        BoundaryDecision decision = dataRefreshPolicyService.decideBoundaries(startup);
+        log.info("NPL boundaries: {} ({})", decision.action(), decision.reason());
+        if (decision.action() == Action.ADOPT) {
+            adoptLiveBoundaries();
+        }
+        StagedSource boundaries = decision.action() == Action.RELOAD ? stageBoundaries() : null;
+        StagedSource exposure = stageHumanExposure(boundaries != null);
+        if (boundaries != null && exposure == null) {
+            checkActiveSiteDrop(humanExposureRepository.projectedActiveSiteCount(true, false),
+                    nplBoundaryRepository.countActiveSites());
+        }
+        if (boundaries == null && exposure == null && !startup) {
+            dataSourceRepository.recordUnchanged(DataSourceRepository.EXPOSURE);
+            log.info("Data refresh done: no source changed");
+            return;
+        }
+        swapIntoLive(boundaries, exposure);
+        if (exposure == null) {
+            dataSourceRepository.recordUnchanged(DataSourceRepository.EXPOSURE);
+        }
     }
 
-    private boolean stageBoundariesIfNeeded() throws Exception {
-        if (!dataRefreshPolicyService.shouldRefreshBoundaries()) {
-            return false;
-        }
-        if (!StringUtils.hasText(dataProperties.getNplBoundariesUrl())) {
-            throw new IllegalStateException("SITEPLAIN_DATA_NPL_BOUNDARIES_URL is required for initial boundary load");
+    /** First boot with V7 on a database whose boundaries predate data_source_state: no reload. */
+    private void adoptLiveBoundaries() {
+        String url = dataProperties.getNplBoundariesUrl().trim();
+        int liveCount = nplBoundaryRepository.liveCount();
+        LocalDateTime loadedAt = nplBoundaryRepository.lastLoadedAt().orElse(null);
+        dataSourceRepository.recordAdopted(DataSourceRepository.BOUNDARIES, url, liveCount,
+                nplBoundaryRepository.liveFinalCount(), loadedAt);
+        log.warn("Adopted {} as the source of the {} live NPL boundaries (loaded {}) without reloading them; "
+                + "its SHA-256 is recorded on the next real load", url, liveCount, loadedAt);
+    }
+
+    private StagedSource stageBoundaries() throws Exception {
+        String url = StringUtils.trimWhitespace(dataProperties.getNplBoundariesUrl());
+        if (!StringUtils.hasText(url)) {
+            throw new IllegalStateException("SITEPLAIN_DATA_NPL_BOUNDARIES_URL is required to load boundaries");
         }
         int liveCount = nplBoundaryRepository.liveCount();
-        BoundaryFileStats stats;
-        try (DownloadedFile file = sourceDownloader.download(dataProperties.getNplBoundariesUrl(), "NPL boundary file",
+        try (DownloadedFile file = sourceDownloader.download(url, NPL_BOUNDARY_FILE,
                 dataProperties.getBoundariesDownloadTimeout(), dataProperties.getBoundariesMaxSize().toBytes())) {
-            stats = nplBoundaryLoader.loadIntoStaging(file.path());
+            BoundaryFileStats stats = nplBoundaryLoader.loadIntoStaging(file.path());
+            List<String> problems = stats.problems(liveCount);
+            if (!problems.isEmpty()) {
+                throw new SourceRejectedException(NPL_BOUNDARY_FILE, problems);
+            }
+            log.info("NPL boundaries loaded into staging: {} rows, {} Final", stats.staged(), stats.finalCount());
+            return new StagedSource(file, stats.staged(), stats.finalCount());
         }
-        List<String> problems = stats.problems(liveCount);
-        if (!problems.isEmpty()) {
-            throw new SourceRejectedException("NPL boundary file", problems);
-        }
-        log.info("NPL boundaries loaded into staging: {} rows, {} Final", stats.staged(), stats.finalCount());
-        return true;
     }
 
-    private int stageHumanExposure(boolean boundariesStaged) throws Exception {
-        ExposureFeedStats stats;
-        try (DownloadedFile file = sourceDownloader.download(dataProperties.getHumanExposureUrl(), "Human exposure feed",
+    /** Stages the exposure feed, or returns null when it is byte-for-byte the live feed. */
+    private StagedSource stageHumanExposure(boolean boundariesStaged) throws Exception {
+        String url = StringUtils.trimWhitespace(dataProperties.getHumanExposureUrl());
+        if (!StringUtils.hasText(url)) {
+            throw new IllegalStateException("SITEPLAIN_DATA_HUMAN_EXPOSURE_URL is not set");
+        }
+        try (DownloadedFile file = sourceDownloader.download(url, HUMAN_EXPOSURE_FEED,
                 dataProperties.getHumanExposureDownloadTimeout(), dataProperties.getHumanExposureMaxSize().toBytes())) {
-            stats = humanExposureLoader.loadIntoStaging(file.path());
+            DataSourceRecord live = dataSourceRepository.find(DataSourceRepository.EXPOSURE).orElse(null);
+            if (live != null && file.sha256().equals(live.sha256()) && url.equals(live.sourceUrl())
+                    && humanExposureRepository.liveCount() > 0) {
+                log.info("Human exposure feed unchanged (sha256 {}); keeping the live rows", file.sha256());
+                return null;
+            }
+            ExposureFeedStats stats = humanExposureLoader.loadIntoStaging(file.path());
+            List<String> problems = stats.problems();
+            if (!problems.isEmpty()) {
+                throw new SourceRejectedException(HUMAN_EXPOSURE_FEED, problems);
+            }
+            if (!stats.unknownStatusCodes().isEmpty()) {
+                // Not fatal: such a site shows "Exposure status: CODE" until ExposureStatusMapper learns the code.
+                log.warn("Human exposure feed has humexposurestscode values with no label: {}", stats.unknownStatusCodes());
+            }
+            Map<String, Integer> statusCounts = humanExposureRepository.stagingStatusCounts();
+            checkExposureStatuses(statusCounts,
+                    humanExposureRepository.projectedActiveSiteCount(boundariesStaged, true),
+                    nplBoundaryRepository.countActiveSites());
+            return new StagedSource(file, stats.staged(), statusCounts.getOrDefault("F", 0));
         }
-        List<String> problems = stats.problems();
-        if (!problems.isEmpty()) {
-            throw new SourceRejectedException("Human exposure feed", problems);
-        }
-        if (!stats.unknownStatusCodes().isEmpty()) {
-            // Not fatal: such a site shows "Exposure status: CODE" until ExposureStatusMapper learns the code.
-            log.warn("Human exposure feed has humexposurestscode values with no label: {}", stats.unknownStatusCodes());
-        }
-        int exposureCount = stats.staged();
-        checkExposureStatuses(humanExposureRepository.stagingStatusCounts(),
-                humanExposureRepository.stagingActiveSiteCount(boundariesStaged),
-                nplBoundaryRepository.countActiveSites());
-        return exposureCount;
     }
 
-    private void swapIntoLive(boolean boundariesStaged, int exposureCount) {
+    private void swapIntoLive(StagedSource boundaries, StagedSource exposure) {
         long started = System.nanoTime();
         int[] cacheCounts = transactionTemplate.execute(status -> {
-            if (boundariesStaged) {
+            if (boundaries != null) {
                 nplBoundaryRepository.replaceLiveFromStaging();
+                boundaries.record(dataSourceRepository, DataSourceRepository.BOUNDARIES);
             }
-            humanExposureRepository.replaceLiveFromStaging();
+            if (exposure != null) {
+                humanExposureRepository.replaceLiveFromStaging();
+                exposure.record(dataSourceRepository, DataSourceRepository.EXPOSURE);
+            }
             int seoCount = seoPageCacheBuilder.rebuild();
             if (seoCount == 0) {
                 // Rolls the whole swap back: the validated sources can never yield zero active sites.
@@ -159,19 +216,34 @@ public class DataBootstrapService implements ApplicationRunner {
         });
         long swapMillis = (System.nanoTime() - started) / 1_000_000;
         // After commit: fresh planner statistics for the replaced tables, then empty staging.
-        if (boundariesStaged) {
+        if (boundaries != null) {
             nplBoundaryRepository.analyzeLive();
-            nplBoundaryRepository.clearStaging();
         }
-        humanExposureRepository.analyzeLive();
-        humanExposureRepository.clearStaging();
+        if (exposure != null) {
+            humanExposureRepository.analyzeLive();
+        }
         seoPageRepository.analyzeSiteCache();
         statePageRepository.analyze();
+        nplBoundaryRepository.clearStaging();
+        humanExposureRepository.clearStaging();
         sitemapService.rebuild();
-        log.info("Bootstrap complete in a {} ms swap. Boundaries reloaded: {}, Sites: {}, Exposure records: {}, "
-                        + "SEO pages: {}, State pages: {}",
-                swapMillis, boundariesStaged, nplBoundaryRepository.countActiveSites(), exposureCount,
-                cacheCounts[0], cacheCounts[1]);
+        log.info("Data refresh done in a {} ms swap. Boundaries {}, exposure {}. Sites: {}, SEO pages: {}, State pages: {}",
+                swapMillis,
+                boundaries == null ? "unchanged" : "reloaded (" + boundaries.rows() + " rows)",
+                exposure == null ? "unchanged" : "replaced (" + exposure.rows() + " rows)",
+                nplBoundaryRepository.countActiveSites(), cacheCounts[0], cacheCounts[1]);
+    }
+
+    /** Identity and counts of a validated, staged source, kept after its temp file is deleted. */
+    private record StagedSource(String url, String sha256, long bytes, Instant lastModified, int rows, int finalCount) {
+
+        StagedSource(DownloadedFile file, int rows, int finalCount) {
+            this(file.sourceUrl(), file.sha256(), file.bytes(), file.lastModified(), rows, finalCount);
+        }
+
+        void record(DataSourceRepository repository, String dataset) {
+            repository.recordLoaded(dataset, url, sha256, bytes, lastModified, rows, finalCount);
+        }
     }
 
     /** Throws, before anything live changes, when the staged feed would publish a wrong active site set. */
@@ -186,6 +258,11 @@ public class DataBootstrapService implements ApplicationRunner {
             throw new IllegalStateException("Human exposure feed Final count " + finalCount
                     + " is outside the expected band " + MIN_FEED_FINAL + ".." + MAX_FEED_FINAL);
         }
+        checkActiveSiteDrop(stagingActiveCount, liveActiveCount);
+    }
+
+    /** Throws when the staged data would cut the active site count by more than 5%. */
+    static void checkActiveSiteDrop(int stagingActiveCount, int liveActiveCount) {
         if (liveActiveCount > 0 && stagingActiveCount < liveActiveCount * MIN_ACTIVE_RATIO) {
             throw new IllegalStateException("Active site count would drop from " + liveActiveCount
                     + " to " + stagingActiveCount + ", more than " + Math.round((1 - MIN_ACTIVE_RATIO) * 100) + "%");
