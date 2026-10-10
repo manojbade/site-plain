@@ -1,9 +1,11 @@
 package com.siteplain.service;
 
 import com.siteplain.config.DataProperties;
+import com.siteplain.data.loader.DownloadedFile;
 import com.siteplain.data.loader.HumanExposureLoader;
 import com.siteplain.data.loader.NplBoundaryLoader;
 import com.siteplain.data.loader.SeoPageCacheBuilder;
+import com.siteplain.data.loader.SourceDownloader;
 import com.siteplain.data.loader.StatePageCacheBuilder;
 import com.siteplain.data.repository.HumanExposureRepository;
 import com.siteplain.data.repository.NplBoundaryRepository;
@@ -36,6 +38,7 @@ public class DataBootstrapService implements ApplicationRunner {
 
     private final DataProperties dataProperties;
     private final DataRefreshPolicyService dataRefreshPolicyService;
+    private final SourceDownloader sourceDownloader;
     private final NplBoundaryLoader nplBoundaryLoader;
     private final HumanExposureLoader humanExposureLoader;
     private final NplBoundaryRepository nplBoundaryRepository;
@@ -49,6 +52,7 @@ public class DataBootstrapService implements ApplicationRunner {
 
     public DataBootstrapService(DataProperties dataProperties,
                                 DataRefreshPolicyService dataRefreshPolicyService,
+                                SourceDownloader sourceDownloader,
                                 NplBoundaryLoader nplBoundaryLoader,
                                 HumanExposureLoader humanExposureLoader,
                                 NplBoundaryRepository nplBoundaryRepository,
@@ -61,6 +65,7 @@ public class DataBootstrapService implements ApplicationRunner {
                                 PlatformTransactionManager transactionManager) {
         this.dataProperties = dataProperties;
         this.dataRefreshPolicyService = dataRefreshPolicyService;
+        this.sourceDownloader = sourceDownloader;
         this.nplBoundaryLoader = nplBoundaryLoader;
         this.humanExposureLoader = humanExposureLoader;
         this.nplBoundaryRepository = nplBoundaryRepository;
@@ -100,7 +105,11 @@ public class DataBootstrapService implements ApplicationRunner {
             throw new IllegalStateException("SITEPLAIN_DATA_NPL_BOUNDARIES_URL is required for initial boundary load");
         }
         int liveCount = nplBoundaryRepository.liveCount();
-        int stagingCount = nplBoundaryLoader.loadIntoStaging(dataProperties.getNplBoundariesUrl());
+        int stagingCount;
+        try (DownloadedFile file = sourceDownloader.download(dataProperties.getNplBoundariesUrl(), "NPL boundary file",
+                dataProperties.getBoundariesDownloadTimeout(), dataProperties.getBoundariesMaxSize().toBytes())) {
+            stagingCount = nplBoundaryLoader.loadIntoStaging(file.path());
+        }
         if (stagingCount <= 0) {
             throw new IllegalStateException("NPL boundary staging load produced zero rows");
         }
@@ -112,7 +121,11 @@ public class DataBootstrapService implements ApplicationRunner {
     }
 
     private int stageHumanExposure(boolean boundariesStaged) throws Exception {
-        int exposureCount = humanExposureLoader.loadIntoStaging(dataProperties.getHumanExposureUrl());
+        int exposureCount;
+        try (DownloadedFile file = sourceDownloader.download(dataProperties.getHumanExposureUrl(), "Human exposure feed",
+                dataProperties.getHumanExposureDownloadTimeout(), dataProperties.getHumanExposureMaxSize().toBytes())) {
+            exposureCount = humanExposureLoader.loadIntoStaging(file.path());
+        }
         if (exposureCount <= 1500) {
             throw new IllegalStateException("Human exposure staging row count is unexpectedly low: " + exposureCount);
         }

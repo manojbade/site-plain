@@ -13,6 +13,7 @@ import com.siteplain.domain.model.GeocodedAddress;
 import com.siteplain.domain.model.NplSite;
 import com.siteplain.service.NplLookupService;
 import com.siteplain.service.SitemapService;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
@@ -79,8 +80,8 @@ class ActiveSiteDefinitionIntegrationTest {
         // Feed says Final, boundary file says Deleted.
         insertBoundary("GAT000000008", "Relisted Test Site", "D");
 
-        String fixtureUrl = new ClassPathResource("fixtures/human-exposure-sample.json").getURI().toString();
-        assertThat(humanExposureLoader.loadIntoStaging(fixtureUrl)).isEqualTo(7);
+        Path fixture = new ClassPathResource("fixtures/human-exposure-sample.json").getFile().toPath();
+        assertThat(humanExposureLoader.loadIntoStaging(fixture)).isEqualTo(7);
         humanExposureRepository.replaceLiveFromStaging();
         seoPageCacheBuilder.rebuild();
         statePageCacheBuilder.rebuild();

@@ -9,7 +9,6 @@ import static org.mockito.Mockito.verify;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.siteplain.data.repository.NplBoundaryRepository;
-import java.net.http.HttpClient;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
@@ -31,9 +30,9 @@ class NplBoundaryLoaderTest {
                 ]}
                 """);
         NplBoundaryRepository repository = mock(NplBoundaryRepository.class);
-        NplBoundaryLoader loader = new NplBoundaryLoader(HttpClient.newHttpClient(), new ObjectMapper(), repository);
+        NplBoundaryLoader loader = new NplBoundaryLoader(new ObjectMapper(), repository);
 
-        assertThat(loader.loadIntoStaging(file.toUri().toString())).isEqualTo(2);
+        assertThat(loader.loadIntoStaging(file)).isEqualTo(2);
 
         verify(repository).upsertStaging(eq("COD980499248"), eq("LOWRY LANDFILL"), eq("CO"), eq("F"),
                 eq("https://www.epa.gov/superfund/lowry-landfill"), anyString());

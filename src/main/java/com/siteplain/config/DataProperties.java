@@ -1,6 +1,8 @@
 package com.siteplain.config;
 
+import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.util.unit.DataSize;
 
 @ConfigurationProperties(prefix = "siteplain.data")
 public class DataProperties {
@@ -10,6 +12,12 @@ public class DataProperties {
     private int maxAgeDays = 90;
     private String nplBoundariesUrl;
     private String humanExposureUrl = "https://www3.epa.gov/semsjson/Human_Exposure_Site_List.json";
+    // Whole-download limits (headers and body). Caps are about 4x today's sizes: the boundary
+    // release is 57.8 MB and the exposure feed 1.4 MB.
+    private Duration boundariesDownloadTimeout = Duration.ofSeconds(300);
+    private DataSize boundariesMaxSize = DataSize.ofMegabytes(240);
+    private Duration humanExposureDownloadTimeout = Duration.ofSeconds(60);
+    private DataSize humanExposureMaxSize = DataSize.ofMegabytes(6);
 
     public boolean isBootstrapEnabled() {
         return bootstrapEnabled;
@@ -49,5 +57,37 @@ public class DataProperties {
 
     public void setHumanExposureUrl(String humanExposureUrl) {
         this.humanExposureUrl = humanExposureUrl;
+    }
+
+    public Duration getBoundariesDownloadTimeout() {
+        return boundariesDownloadTimeout;
+    }
+
+    public void setBoundariesDownloadTimeout(Duration boundariesDownloadTimeout) {
+        this.boundariesDownloadTimeout = boundariesDownloadTimeout;
+    }
+
+    public DataSize getBoundariesMaxSize() {
+        return boundariesMaxSize;
+    }
+
+    public void setBoundariesMaxSize(DataSize boundariesMaxSize) {
+        this.boundariesMaxSize = boundariesMaxSize;
+    }
+
+    public Duration getHumanExposureDownloadTimeout() {
+        return humanExposureDownloadTimeout;
+    }
+
+    public void setHumanExposureDownloadTimeout(Duration humanExposureDownloadTimeout) {
+        this.humanExposureDownloadTimeout = humanExposureDownloadTimeout;
+    }
+
+    public DataSize getHumanExposureMaxSize() {
+        return humanExposureMaxSize;
+    }
+
+    public void setHumanExposureMaxSize(DataSize humanExposureMaxSize) {
+        this.humanExposureMaxSize = humanExposureMaxSize;
     }
 }

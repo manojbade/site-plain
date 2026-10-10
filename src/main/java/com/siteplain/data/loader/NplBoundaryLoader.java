@@ -5,13 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.siteplain.data.repository.NplBoundaryRepository;
 import com.siteplain.support.EpaUrls;
 import java.io.IOException;
-import java.net.URI;
-import java.net.URLEncoder;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Iterator;
 import org.springframework.stereotype.Component;
@@ -19,21 +12,19 @@ import org.springframework.stereotype.Component;
 @Component
 public class NplBoundaryLoader {
 
-    private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final NplBoundaryRepository nplBoundaryRepository;
 
-    public NplBoundaryLoader(HttpClient httpClient,
-                             ObjectMapper objectMapper,
+    public NplBoundaryLoader(ObjectMapper objectMapper,
                              NplBoundaryRepository nplBoundaryRepository) {
-        this.httpClient = httpClient;
         this.objectMapper = objectMapper;
         this.nplBoundaryRepository = nplBoundaryRepository;
     }
 
-    public int loadIntoStaging(String sourceUrl) throws IOException, InterruptedException {
+    /** Loads a downloaded file (see SourceDownloader) into staging. */
+    public int loadIntoStaging(Path file) throws IOException {
         nplBoundaryRepository.clearStaging();
-        JsonNode root = objectMapper.readTree(readBytes(sourceUrl));
+        JsonNode root = objectMapper.readTree(file.toFile());
         JsonNode features = root.path("features");
         if (!features.isArray()) {
             throw new IOException("GeoJSON missing features array");
@@ -58,26 +49,6 @@ public class NplBoundaryLoader {
             rowCount++;
         }
         return rowCount;
-    }
-
-    private byte[] readBytes(String sourceUrl) throws IOException, InterruptedException {
-        URI uri = URI.create(sourceUrl);
-        if ("file".equalsIgnoreCase(uri.getScheme())) {
-            return Files.readAllBytes(Path.of(uri));
-        }
-        if (uri.getScheme() == null || uri.getScheme().isBlank()) {
-            return Files.readAllBytes(Path.of(sourceUrl));
-        }
-        HttpRequest request = HttpRequest.newBuilder(uri)
-                .header("User-Agent", "site-plain-loader/0.0.1")
-                .GET()
-                .build();
-        HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
-        if (response.statusCode() >= 400) {
-            throw new IOException("Failed to download boundaries: status=" + response.statusCode()
-                    + " url=" + URLEncoder.encode(sourceUrl, StandardCharsets.UTF_8));
-        }
-        return response.body();
     }
 
     private String text(JsonNode node, String field) {

@@ -2,6 +2,8 @@ package com.siteplain.service;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -9,14 +11,17 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.siteplain.config.DataProperties;
+import com.siteplain.data.loader.DownloadedFile;
 import com.siteplain.data.loader.HumanExposureLoader;
 import com.siteplain.data.loader.NplBoundaryLoader;
 import com.siteplain.data.loader.SeoPageCacheBuilder;
+import com.siteplain.data.loader.SourceDownloader;
 import com.siteplain.data.loader.StatePageCacheBuilder;
 import com.siteplain.data.repository.HumanExposureRepository;
 import com.siteplain.data.repository.NplBoundaryRepository;
 import com.siteplain.data.repository.SeoPageRepository;
 import com.siteplain.data.repository.StatePageRepository;
+import java.nio.file.Path;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -74,12 +79,15 @@ class DataBootstrapServiceTest {
         StatePageCacheBuilder stateBuilder = mock(StatePageCacheBuilder.class);
         SitemapService sitemapService = mock(SitemapService.class);
         when(policy.shouldRefreshBoundaries()).thenReturn(false);
-        when(loader.loadIntoStaging(anyString())).thenReturn(1905);
+        when(loader.loadIntoStaging(any(Path.class))).thenReturn(1905);
+        SourceDownloader downloader = mock(SourceDownloader.class);
+        when(downloader.download(anyString(), anyString(), any(), anyLong()))
+                .thenReturn(new DownloadedFile("file:///feed.json", Path.of("/nonexistent/feed.json"), 10, "ab", null));
         when(exposureRepository.stagingStatusCounts()).thenReturn(Map.of("FINAL", 1337, "DELETED", 466, "NOT NPL", 102));
         when(exposureRepository.stagingActiveSiteCount(false)).thenReturn(0);
         when(boundaryRepository.countActiveSites()).thenReturn(1343);
 
-        DataBootstrapService service = new DataBootstrapService(properties, policy, mock(NplBoundaryLoader.class), loader,
+        DataBootstrapService service = new DataBootstrapService(properties, policy, downloader, mock(NplBoundaryLoader.class), loader,
                 boundaryRepository, exposureRepository, seoBuilder, stateBuilder, mock(SeoPageRepository.class),
                 mock(StatePageRepository.class), sitemapService,
                 mock(PlatformTransactionManager.class));
