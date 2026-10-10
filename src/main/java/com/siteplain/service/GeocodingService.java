@@ -21,6 +21,7 @@ public class GeocodingService {
 
     // Nominatim place_rank 26 and 27 are streets, 28 to 30 are house numbers and buildings.
     private static final int NOMINATIM_STREET_RANK = 26;
+    private static final int NOMINATIM_HOUSE_RANK = 28;
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
@@ -145,26 +146,34 @@ public class GeocodingService {
     }
 
     /**
-     * Null for a street or house level match. Otherwise a short description of what was matched
-     * (city, ZIP code, county, ...), so the results page can say the location is approximate.
+     * Null for a house or building level match. Otherwise a short description of what was matched
+     * (street, city, ZIP code, county, ...), so the results page can say the location is approximate.
+     * A street match is approximate: the point is somewhere on the road, which can be miles from
+     * the typed house number (Nominatim returns the road when the number does not exist).
      */
     private String nominatimApproximateMatch(JsonNode best) {
         JsonNode rank = best.path("place_rank");
         String type = text(best, "addresstype");
+        String lowerType = type == null ? null : type.toLowerCase(Locale.ROOT);
         if (rank.isNumber()) {
-            if (rank.asInt() >= NOMINATIM_STREET_RANK) {
+            if (rank.asInt() >= NOMINATIM_HOUSE_RANK) {
                 return null;
             }
-        } else if (type != null && List.of("house", "building", "road").contains(type.toLowerCase(Locale.ROOT))) {
+            if (rank.asInt() >= NOMINATIM_STREET_RANK) {
+                return "street";
+            }
+        } else if (lowerType != null && (List.of("house", "building").contains(lowerType)
+                || ("place".equals(lowerType) && text(best.path("address"), "house_number") != null))) {
             return null;
         }
-        if (type == null) {
+        if (lowerType == null) {
             return "area";
         }
-        return switch (type.toLowerCase(Locale.ROOT)) {
+        return switch (lowerType) {
+            case "road" -> "street";
             case "postcode" -> "ZIP code";
             case "neighbourhood" -> "neighborhood";
-            default -> type.toLowerCase(Locale.ROOT).replace('_', ' ');
+            default -> lowerType.replace('_', ' ');
         };
     }
 

@@ -31,14 +31,30 @@ class GeocodingServiceTest {
     }
 
     @Test
-    void nominatimStreetMatch_isExact() throws Exception {
+    void nominatimStreetOnlyMatch_isApproximateStreet() throws Exception {
+        // Real shape of the jsonv2 reply for "99999 Kings Highway, NJ": no such house, so Nominatim
+        // returns the road and there is no house_number in the address.
         GeocodedAddress result = parse("""
-                [{"lat":"39.8","lon":"-84.0","place_rank":26,"addresstype":"road","display_name":"Main Street, Dayton, Ohio",
-                  "address":{"road":"Main Street","state":"Ohio","ISO3166-2-lvl4":"US-OH"}}]
+                [{"lat":"40.4078","lon":"-74.0921","place_rank":26,"addresstype":"road","category":"highway",
+                  "type":"secondary","display_name":"Kings Highway, Hendrickson Corners, Middletown Township, Monmouth County, New Jersey, 07748, United States",
+                  "address":{"road":"Kings Highway","hamlet":"Hendrickson Corners","town":"Middletown Township",
+                             "county":"Monmouth County","state":"New Jersey","ISO3166-2-lvl4":"US-NJ",
+                             "postcode":"07748","country":"United States","country_code":"us"}}]
                 """);
 
-        assertThat(result.approximate()).isFalse();
-        assertThat(result.stateCode()).isEqualTo("OH");
+        assertThat(result.approximate()).isTrue();
+        assertThat(result.approximateMatch()).isEqualTo("street");
+        assertThat(result.stateCode()).isEqualTo("NJ");
+    }
+
+    @Test
+    void nominatimRank27_isApproximateStreet() throws Exception {
+        assertThat(parse("""
+                [{"lat":"39.8","lon":"-84.0","place_rank":27,"addresstype":"road","display_name":"x","address":{}}]
+                """).approximateMatch()).isEqualTo("street");
+        assertThat(parse("""
+                [{"lat":"39.8","lon":"-84.0","place_rank":28,"addresstype":"building","display_name":"x","address":{}}]
+                """).approximate()).isFalse();
     }
 
     @Test
@@ -86,6 +102,15 @@ class GeocodingServiceTest {
         assertThat(parse("""
                 [{"lat":"39.8","lon":"-84.0","addresstype":"building","display_name":"x","address":{}}]
                 """).approximate()).isFalse();
+        assertThat(parse("""
+                [{"lat":"39.8","lon":"-84.0","addresstype":"place","display_name":"x","address":{"house_number":"57"}}]
+                """).approximate()).isFalse();
+        assertThat(parse("""
+                [{"lat":"39.8","lon":"-84.0","addresstype":"place","display_name":"x","address":{}}]
+                """).approximateMatch()).isEqualTo("place");
+        assertThat(parse("""
+                [{"lat":"39.8","lon":"-84.0","addresstype":"road","display_name":"x","address":{}}]
+                """).approximateMatch()).isEqualTo("street");
         assertThat(parse("""
                 [{"lat":"39.8","lon":"-84.0","display_name":"x","address":{}}]
                 """).approximateMatch()).isEqualTo("area");

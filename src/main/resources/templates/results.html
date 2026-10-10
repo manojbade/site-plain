@@ -52,10 +52,10 @@
 
     <div class="alert alert-warning mb-4" role="note" th:if="${viewModel.approximateMatch != null}">
       <strong>Approximate location.</strong>
-      This address could not be matched to a street or house, only to the following
+      This address could not be matched to a house or building, only to the following
       <span th:text="${viewModel.approximateMatch}">city</span>:
       <span th:text="${viewModel.normalizedAddress}">Woburn, Massachusetts</span>.
-      Distances are measured from a central point in that area, so they may be off, and sites near the actual address may be missing or listed in error.
+      Distances are measured from one point in that area, so they may be off, and sites near the actual address may be missing or listed in error.
     </div>
 
     <div class="row g-3">

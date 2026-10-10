@@ -22,7 +22,7 @@ public record GeocodedAddress(
         return new GeocodedAddress(rawAddress, rawAddress, null, null, null, null, null, null, false);
     }
 
-    /** True when the geocoder matched only a coarse place (a city or ZIP code, say), not a street or house. */
+    /** True when the geocoder matched only a coarse place (a street, city or ZIP code, say), not a house or building. */
     public boolean approximate() {
         return approximateMatch != null;
     }
