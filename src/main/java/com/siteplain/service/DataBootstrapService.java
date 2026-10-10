@@ -202,7 +202,7 @@ public class DataBootstrapService implements ApplicationRunner {
 
     /**
      * Records a failed source and logs it at ERROR, or throws when there is no live data to fall back
-     * on. Staging is left for the next load to clear; nothing live has changed.
+     * on. Nothing live has changed; staging is cleared at the end of the refresh or by the next load.
      */
     private void sourceFailed(String dataset, String label, Exception e, boolean firstBoot) {
         if (e instanceof InterruptedException) {
