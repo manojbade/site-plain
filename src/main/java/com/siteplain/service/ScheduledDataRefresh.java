@@ -16,6 +16,9 @@ import org.springframework.stereotype.Component;
  * path SITEPLAIN_DATA_REFRESH_ON_STARTUP is not applied, so boundaries reload only when the configured
  * URL still differs from the live source (a boundary reload that failed at startup is retried).
  *
+ * Afterwards it rebuilds the in-memory sitemap from the page caches, so an instance whose own
+ * refresh was skipped (another instance held the lock and swapped new data in) catches up within a day.
+ *
  * It never overlaps the startup refresh: it skips until the app is ready (Spring Boot marks it
  * ready only after the startup refresh has returned), and the advisory lock keeps it apart from a
  * refresh in another instance. Not created when SITEPLAIN_DATA_BOOTSTRAP_ENABLED=false; a cron of "-"
@@ -29,11 +32,14 @@ public class ScheduledDataRefresh {
     private static final Logger log = LoggerFactory.getLogger(ScheduledDataRefresh.class);
 
     private final DataBootstrapService dataBootstrapService;
+    private final SitemapService sitemapService;
     private final ApplicationAvailability applicationAvailability;
 
     public ScheduledDataRefresh(DataBootstrapService dataBootstrapService,
+                                SitemapService sitemapService,
                                 ApplicationAvailability applicationAvailability) {
         this.dataBootstrapService = dataBootstrapService;
+        this.sitemapService = sitemapService;
         this.applicationAvailability = applicationAvailability;
     }
 
@@ -53,6 +59,11 @@ public class ScheduledDataRefresh {
                 Thread.currentThread().interrupt();
             }
             log.error("Scheduled data refresh failed; keeping the live data", e);
+        }
+        try {
+            sitemapService.rebuild();
+        } catch (RuntimeException e) {
+            log.error("Sitemap rebuild after the scheduled refresh failed; /sitemap.xml keeps its previous content", e);
         }
     }
 }
