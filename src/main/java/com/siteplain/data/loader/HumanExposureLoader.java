@@ -1,13 +1,17 @@
 package com.siteplain.data.loader;
 
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.siteplain.data.repository.HumanExposureRepository;
 import com.siteplain.support.EpaUrls;
 import com.siteplain.support.StateNames;
+import java.io.BufferedInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Iterator;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -22,34 +26,55 @@ public class HumanExposureLoader {
         this.humanExposureRepository = humanExposureRepository;
     }
 
-    /** Loads a downloaded file (see SourceDownloader) into staging. */
+    /** Loads a downloaded file (see SourceDownloader) into staging, streaming one row at a time. */
     public int loadIntoStaging(Path file) throws IOException {
         humanExposureRepository.clearStaging();
-        JsonNode root = objectMapper.readTree(file.toFile());
-        JsonNode rows = root.path("data");
-        if (!rows.isArray()) {
-            throw new IOException("Human exposure JSON missing data array");
-        }
-        int rowCount = 0;
-        for (Iterator<JsonNode> iterator = rows.elements(); iterator.hasNext(); ) {
-            JsonNode row = iterator.next();
-            String epaId = uppercase(text(row, "epaid"));
-            if (epaId == null) {
-                continue;
+        try (InputStream in = new BufferedInputStream(Files.newInputStream(file), 1 << 16);
+             JsonParser parser = objectMapper.createParser(in)) {
+            if (parser.nextToken() != JsonToken.START_OBJECT) {
+                throw new IOException("Human exposure JSON is not a JSON object");
             }
-            // Every feed row is kept, including Final sites with no published boundary.
-            humanExposureRepository.upsertStaging(
-                    epaId,
-                    uppercase(text(row, "humexposurestscode")),
-                    text(row, "humanexposurepathdesc"),
-                    uppercase(text(row, "nplstatus")),
-                    text(row, "sitename"),
-                    stateCode(uppercase(text(row, "state_code")), epaId),
-                    EpaUrls.normalize(text(row, "friendlyurl"))
-            );
-            rowCount++;
+            boolean sawData = false;
+            int rowCount = 0;
+            while (parser.nextToken() == JsonToken.FIELD_NAME) {
+                String field = parser.currentName();
+                JsonToken value = parser.nextToken();
+                if ("data".equals(field) && value == JsonToken.START_ARRAY) {
+                    sawData = true;
+                    for (JsonToken token = parser.nextToken(); token != JsonToken.END_ARRAY; token = parser.nextToken()) {
+                        if (token == JsonToken.START_OBJECT && loadRow(parser.readValueAsTree())) {
+                            rowCount++;
+                        } else {
+                            parser.skipChildren();
+                        }
+                    }
+                } else {
+                    parser.skipChildren();
+                }
+            }
+            if (!sawData) {
+                throw new IOException("Human exposure JSON missing data array");
+            }
+            return rowCount;
         }
-        return rowCount;
+    }
+
+    private boolean loadRow(JsonNode row) {
+        String epaId = uppercase(text(row, "epaid"));
+        if (epaId == null) {
+            return false;
+        }
+        // Every feed row is kept, including Final sites with no published boundary.
+        humanExposureRepository.upsertStaging(
+                epaId,
+                uppercase(text(row, "humexposurestscode")),
+                text(row, "humanexposurepathdesc"),
+                uppercase(text(row, "nplstatus")),
+                text(row, "sitename"),
+                stateCode(uppercase(text(row, "state_code")), epaId),
+                EpaUrls.normalize(text(row, "friendlyurl"))
+        );
+        return true;
     }
 
     static String stateCode(String feedStateCode, String epaId) {
