@@ -166,6 +166,33 @@ class PageRenderingIntegrationTest {
     }
 
     @Test
+    void exposureAsOfDate_isShownOnSiteAndResultsPages() throws Exception {
+        String site = mockMvc.perform(get("/site/OHR000000001"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(site).contains("EPA exposure status as of October 10, 2026");
+
+        String unmapped = mockMvc.perform(get("/site/OHR000000002"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(unmapped).contains("EPA exposure status as of October 10, 2026");
+
+        String results = mockMvc.perform(get("/results")
+                        .param("lat", "39.825")
+                        .param("lng", "-84.055")
+                        .param("address", "1 Main St, Dayton, OH")
+                        .param("state", "OH"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(results).contains("EPA exposure status as of October 10, 2026");
+
+        String home = mockMvc.perform(get("/"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(home).contains("EPA site boundaries loaded").doesNotContain("Updated <span>");
+    }
+
+    @Test
     void statePage_metaDescriptionNamesState() throws Exception {
         String html = mockMvc.perform(get("/state/OH"))
                 .andExpect(status().isOk())
@@ -198,7 +225,7 @@ class PageRenderingIntegrationTest {
         jdbcTemplate.update("""
                 INSERT INTO npl_human_exposure
                   (epa_id, humexposurestscode, npl_status, site_name, state_code, epa_url, loaded_at)
-                VALUES (?, ?, 'F', ?, ?, ?, now())
+                VALUES (?, ?, 'F', ?, ?, ?, TIMESTAMP '2026-10-10 06:30:00')
                 """,
                 epaId, statusCode, "UNMAPPED RENDER TEST SITE", stateCode, epaUrl);
     }

@@ -30,6 +30,8 @@
     </p>
     <div class="mb-3">
       <span th:replace="fragments/exposure-badge :: badge(${viewModel.pageData.exposureStatusCode}, ${viewModel.pageData.exposureStatusLabel})"></span>
+      <p class="text-muted small mt-2 mb-0" th:if="${viewModel.exposureStatusAsOf != null}"
+         th:text="'EPA exposure status as of ' + ${viewModel.exposureStatusAsOf}">EPA exposure status as of October 10, 2026</p>
     </div>
     <p th:if="${viewModel.pageData.exposurePathwayDescription != null and !#strings.isEmpty(viewModel.pageData.exposurePathwayDescription)}">
       About this site’s exposure pathways:

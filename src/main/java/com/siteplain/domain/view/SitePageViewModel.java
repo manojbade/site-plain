@@ -4,7 +4,8 @@ import com.siteplain.domain.model.SeoPageData;
 import com.siteplain.support.StateNames;
 
 public record SitePageViewModel(
-        SeoPageData pageData
+        SeoPageData pageData,
+        String exposureStatusAsOf
 ) {
 
     public String metaDescription() {

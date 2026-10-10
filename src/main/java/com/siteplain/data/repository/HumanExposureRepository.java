@@ -1,7 +1,11 @@
 package com.siteplain.data.repository;
 
 import java.sql.Timestamp;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -45,6 +49,15 @@ public class HumanExposureRepository {
     public int stagingCount() {
         Integer count = jdbcTemplate.queryForObject("SELECT count(*) FROM npl_human_exposure_staging", Integer.class);
         return count == null ? 0 : count;
+    }
+
+    /** When the exposure feed now in use was loaded, the as-of date for every exposure status shown. */
+    public Optional<LocalDate> lastLoadedDate() {
+        List<LocalDate> rows = jdbcTemplate.query("""
+                SELECT max(loaded_at)::date AS loaded_date
+                FROM npl_human_exposure
+                """, (rs, rowNum) -> rs.getObject("loaded_date", LocalDate.class));
+        return rows.stream().filter(Objects::nonNull).findFirst();
     }
 
     public void swapStagingToLive() {

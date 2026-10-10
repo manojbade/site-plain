@@ -7,7 +7,9 @@ import com.siteplain.domain.model.NplSite;
 import com.siteplain.domain.view.ResultsViewModel;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Locale;
 import org.junit.jupiter.api.Test;
+import org.thymeleaf.context.Context;
 import org.thymeleaf.spring6.SpringTemplateEngine;
 import org.thymeleaf.templateresolver.ClassLoaderTemplateResolver;
 
@@ -16,7 +18,32 @@ class ResultsPdfServiceTest {
     @Test
     void generateResultsPdf_returnsPdfBytes() {
         ResultsPdfService service = new ResultsPdfService(templateEngine(), siteProperties());
-        ResultsViewModel viewModel = new ResultsViewModel(
+        ResultsViewModel viewModel = viewModel(null);
+
+        byte[] pdf = service.generateResultsPdf(viewModel);
+
+        assertThat(pdf).isNotEmpty();
+        assertThat(new String(pdf, 0, 5, StandardCharsets.ISO_8859_1)).isEqualTo("%PDF-");
+        assertThat(pdf.length).isGreaterThan(1_000);
+    }
+
+    @Test
+    void pdfTemplate_showsExposureAsOfDateAndApproximateNotice() {
+        Context context = new Context(Locale.US);
+        context.setVariable("viewModel", viewModel("city"));
+        String html = templateEngine().process("results-pdf", context);
+
+        assertThat(html).contains("<td>EPA exposure status as of</td>")
+                .contains("<td>October 10, 2026</td>")
+                .contains("Approximate location.")
+                .contains("only to the following\n      <span>city</span>");
+
+        context.setVariable("viewModel", viewModel(null));
+        assertThat(templateEngine().process("results-pdf", context)).doesNotContain("Approximate location.");
+    }
+
+    private static ResultsViewModel viewModel(String approximateMatch) {
+        return new ResultsViewModel(
                 "57 Salem Street, Woburn, MA 01801",
                 "57 Salem Street, Woburn, MA 01801",
                 false,
@@ -32,14 +59,9 @@ class ResultsPdfServiceTest {
                 1337,
                 List.of(),
                 15,
-                null
+                approximateMatch,
+                "October 10, 2026"
         );
-
-        byte[] pdf = service.generateResultsPdf(viewModel);
-
-        assertThat(pdf).isNotEmpty();
-        assertThat(new String(pdf, 0, 5, StandardCharsets.ISO_8859_1)).isEqualTo("%PDF-");
-        assertThat(pdf.length).isGreaterThan(1_000);
     }
 
     private static SpringTemplateEngine templateEngine() {

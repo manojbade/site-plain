@@ -29,6 +29,8 @@
           <p class="eyebrow mb-1">Lookup results</p>
           <h1 class="h2 mb-1" th:text="${viewModel.normalizedAddress}">Resolved address</h1>
           <p class="text-muted mb-0" th:text="${viewModel.resultCount} + ' active Superfund site(s) found within 3 miles'">0 active sites found</p>
+          <p class="text-muted small mb-0" th:if="${viewModel.exposureStatusAsOf != null}"
+             th:text="'EPA exposure status as of ' + ${viewModel.exposureStatusAsOf}">EPA exposure status as of October 10, 2026</p>
         </div>
         <div class="d-flex flex-wrap gap-2 align-items-center">
           <a href="/" class="site-nav-button">&#8592; Check another address</a>

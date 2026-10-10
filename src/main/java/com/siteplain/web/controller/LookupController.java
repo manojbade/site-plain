@@ -1,5 +1,6 @@
 package com.siteplain.web.controller;
 
+import com.siteplain.data.repository.HumanExposureRepository;
 import com.siteplain.data.repository.NplBoundaryRepository;
 import com.siteplain.domain.model.GeocodedAddress;
 import com.siteplain.domain.model.NplLookupResult;
@@ -9,6 +10,7 @@ import com.siteplain.service.AuditService;
 import com.siteplain.service.GeocodingService;
 import com.siteplain.service.NplLookupService;
 import com.siteplain.service.ResultsPdfService;
+import com.siteplain.support.DisplayDates;
 import com.siteplain.support.StateNames;
 import com.siteplain.support.StateResourceRegistry;
 import com.siteplain.support.UsCoverageArea;
@@ -43,6 +45,7 @@ public class LookupController {
     private final AuditService auditService;
     private final NplBoundaryRepository nplBoundaryRepository;
     private final ResultsPdfService resultsPdfService;
+    private final HumanExposureRepository humanExposureRepository;
 
     @Value("${MAPBOX_PUBLIC_TOKEN:}")
     private String mapboxPublicToken;
@@ -51,12 +54,14 @@ public class LookupController {
                             NplLookupService nplLookupService,
                             AuditService auditService,
                             NplBoundaryRepository nplBoundaryRepository,
-                            ResultsPdfService resultsPdfService) {
+                            ResultsPdfService resultsPdfService,
+                            HumanExposureRepository humanExposureRepository) {
         this.geocodingService = geocodingService;
         this.nplLookupService = nplLookupService;
         this.auditService = auditService;
         this.nplBoundaryRepository = nplBoundaryRepository;
         this.resultsPdfService = resultsPdfService;
+        this.humanExposureRepository = humanExposureRepository;
     }
 
     @PostMapping("/lookup")
@@ -189,7 +194,8 @@ public class LookupController {
                 nplBoundaryRepository.countActiveSites(),
                 nplLookupService.findActiveSitesWithoutBoundary(stateCode),
                 nplLookupService.countActiveSitesWithoutBoundary(),
-                geocodedAddress.approximateMatch()
+                geocodedAddress.approximateMatch(),
+                DisplayDates.format(humanExposureRepository.lastLoadedDate().orElse(null))
         );
     }
 
@@ -210,6 +216,7 @@ public class LookupController {
                 0,
                 List.of(),
                 0,
+                null,
                 null
         );
     }

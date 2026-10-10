@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.siteplain.data.repository.HumanExposureRepository;
 import com.siteplain.data.repository.NplBoundaryRepository;
 import com.siteplain.domain.model.GeocodedAddress;
 import com.siteplain.domain.model.NplLookupResult;
@@ -44,6 +45,9 @@ class LookupControllerPdfTest {
     @Mock
     private ResultsPdfService resultsPdfService;
 
+    @Mock
+    private HumanExposureRepository humanExposureRepository;
+
     private MockMvc mockMvc;
 
     @BeforeEach
@@ -53,7 +57,8 @@ class LookupControllerPdfTest {
                 nplLookupService,
                 auditService,
                 nplBoundaryRepository,
-                resultsPdfService
+                resultsPdfService,
+                humanExposureRepository
         );
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }

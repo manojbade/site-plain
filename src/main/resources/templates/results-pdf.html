@@ -154,6 +154,10 @@
         <td>Resolved address</td>
         <td th:text="${viewModel.normalizedAddress}">57 Salem Street, Woburn, MA 01801</td>
       </tr>
+      <tr th:if="${viewModel.exposureStatusAsOf != null}">
+        <td>EPA exposure status as of</td>
+        <td th:text="${viewModel.exposureStatusAsOf}">October 10, 2026</td>
+      </tr>
       <tr>
         <td>Method</td>
         <td>Distance to EPA site boundary polygon, not centroid</td>
