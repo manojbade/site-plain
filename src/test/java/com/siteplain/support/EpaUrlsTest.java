@@ -40,6 +40,15 @@ class EpaUrlsTest {
     }
 
     @Test
+    void normalize_dropsPlaceholderPathSegments() {
+        assertThat(EpaUrls.normalize("www.epa.gov/superfund/null")).isNull();
+        assertThat(EpaUrls.normalize("https://www.epa.gov/superfund/NULL/")).isNull();
+        assertThat(EpaUrls.normalize("https://www.epa.gov/superfund/undefined")).isNull();
+        assertThat(EpaUrls.normalize("www.epa.gov/superfund/nullsite")).isEqualTo("https://www.epa.gov/superfund/nullsite");
+        assertThat(EpaUrls.profileUrl("www.epa.gov/superfund/null", "ORD009032400")).isEqualTo(SEARCH + "ORD009032400");
+    }
+
+    @Test
     void viewModels_neverRenderSchemelessLinks() {
         NplSite site = new NplSite();
         site.setEpaId("COD980499248");
