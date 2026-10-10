@@ -3,6 +3,7 @@ package com.siteplain.data.loader;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.siteplain.data.repository.NplBoundaryRepository;
+import com.siteplain.support.EpaUrls;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -51,7 +52,7 @@ public class NplBoundaryLoader {
                     text(properties, "SITE_NAME"),
                     uppercase(text(properties, "STATE_CODE")),
                     uppercase(text(properties, "NPL_STATUS_CODE")),
-                    text(properties, "URL_ALIAS_TXT"),
+                    EpaUrls.normalize(text(properties, "URL_ALIAS_TXT")),
                     geometry.toString()
             );
             rowCount++;

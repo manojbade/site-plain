@@ -1,5 +1,7 @@
 package com.siteplain.domain.model;
 
+import com.siteplain.support.EpaUrls;
+
 public class NplSite {
 
     private String epaId;
@@ -94,9 +96,6 @@ public class NplSite {
     }
 
     public String effectiveEpaUrl() {
-        if (epaUrl != null && !epaUrl.isBlank()) {
-            return epaUrl;
-        }
-        return "https://cumulis.epa.gov/supercpad/cursites/srchsites.cfm?search_string=" + epaId;
+        return EpaUrls.profileUrl(epaUrl, epaId);
     }
 }

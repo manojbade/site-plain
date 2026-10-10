@@ -19,18 +19,4 @@ class HumanExposureLoaderTest {
         assertThat(HumanExposureLoader.stateCode(null, "NNN000920223")).isNull();
         assertThat(HumanExposureLoader.stateCode(null, "W")).isNull();
     }
-
-    @Test
-    void epaUrl_addsSchemeToEpaFriendlyUrls() {
-        assertThat(HumanExposureLoader.epaUrl("www.epa.gov/superfund/puget-sound-naval-shipyard"))
-                .isEqualTo("https://www.epa.gov/superfund/puget-sound-naval-shipyard");
-        assertThat(HumanExposureLoader.epaUrl("https://www.epa.gov/superfund/acm-smelter"))
-                .isEqualTo("https://www.epa.gov/superfund/acm-smelter");
-    }
-
-    @Test
-    void epaUrl_dropsMissingOrNonEpaSchemelessUrls() {
-        assertThat(HumanExposureLoader.epaUrl(null)).isNull();
-        assertThat(HumanExposureLoader.epaUrl("example.com/site")).isNull();
-    }
 }

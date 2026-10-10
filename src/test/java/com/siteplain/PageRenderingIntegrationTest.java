@@ -45,7 +45,8 @@ class PageRenderingIntegrationTest {
     @BeforeEach
     void loadFixture() {
         cleanup();
-        insertBoundary("OHR000000001", "Render Test Landfill", "https://www.epa.gov/superfund/render-test-landfill");
+        // Scheme-less, like three boundary rows in prod.
+        insertBoundary("OHR000000001", "Render Test Landfill", "www.epa.gov/superfund/render-test-landfill");
         insertExposure("OHR000000001", "HENC", "OH", null);
         // Final per the feed, no published boundary.
         insertExposure("OHR000000002", "HEID", "OH", "www.epa.gov/superfund/render-test-unmapped");
@@ -80,6 +81,30 @@ class PageRenderingIntegrationTest {
         assertThat(unmapped).doesNotContain("viewModel.")
                 .contains("in Ohio. Exposure status: insufficient data. "
                         + "EPA has not published a boundary for this site.\"");
+    }
+
+    @Test
+    void epaProfileLinks_areAbsoluteOnSiteAndResultsPages() throws Exception {
+        String site = mockMvc.perform(get("/site/OHR000000001"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(site).contains("href=\"https://www.epa.gov/superfund/render-test-landfill\"")
+                .doesNotContain("href=\"www.epa.gov");
+
+        String unmapped = mockMvc.perform(get("/site/OHR000000002"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(unmapped).contains("href=\"https://www.epa.gov/superfund/render-test-unmapped\"");
+
+        String results = mockMvc.perform(get("/results")
+                        .param("lat", "39.825")
+                        .param("lng", "-84.055")
+                        .param("address", "Render Test Address, Dayton, OH")
+                        .param("state", "OH"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(results).contains("href=\"https://www.epa.gov/superfund/render-test-landfill\"")
+                .doesNotContain("href=\"www.epa.gov");
     }
 
     @Test

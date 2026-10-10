@@ -3,6 +3,7 @@ package com.siteplain.data.loader;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.siteplain.data.repository.HumanExposureRepository;
+import com.siteplain.support.EpaUrls;
 import com.siteplain.support.StateNames;
 import java.io.IOException;
 import java.net.URI;
@@ -51,7 +52,7 @@ public class HumanExposureLoader {
                     uppercase(text(row, "nplstatus")),
                     text(row, "sitename"),
                     stateCode(uppercase(text(row, "state_code")), epaId),
-                    epaUrl(text(row, "friendlyurl"))
+                    EpaUrls.normalize(text(row, "friendlyurl"))
             );
             rowCount++;
         }
@@ -64,16 +65,6 @@ public class HumanExposureLoader {
         }
         String prefix = epaId != null && epaId.length() >= 2 ? epaId.substring(0, 2) : null;
         return StateNames.isKnown(prefix) ? prefix : null;
-    }
-
-    static String epaUrl(String friendlyUrl) {
-        if (friendlyUrl == null) {
-            return null;
-        }
-        if (friendlyUrl.regionMatches(true, 0, "http://", 0, 7) || friendlyUrl.regionMatches(true, 0, "https://", 0, 8)) {
-            return friendlyUrl;
-        }
-        return friendlyUrl.regionMatches(true, 0, "www.epa.gov/", 0, 12) ? "https://" + friendlyUrl : null;
     }
 
     private byte[] readBytes(String sourceUrl) throws IOException, InterruptedException {
