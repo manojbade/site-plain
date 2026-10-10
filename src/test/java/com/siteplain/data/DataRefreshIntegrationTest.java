@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.siteplain.config.DataProperties;
-import com.siteplain.data.loader.SourceRejectedException;
 import com.siteplain.data.repository.HumanExposureRepository;
 import com.siteplain.data.repository.NplBoundaryRepository;
 import com.siteplain.service.DataBootstrapService;
@@ -129,7 +128,7 @@ class DataRefreshIntegrationTest {
     }
 
     @Test
-    void failureAfterBoundariesAreStaged_leavesLiveDataUntouched() throws Exception {
+    void rejectedFeed_withLiveData_isLoggedAndRecorded_whileTheValidBoundaryReloadGoesAhead() throws Exception {
         load("OLD", true);
         Path boundaries = RefreshFixtures.writeBoundaries(dir.resolve("new.geojson"), "NEW");
         Path badFeed = dir.resolve("bad.json");
@@ -139,35 +138,106 @@ class DataRefreshIntegrationTest {
         dataProperties.setHumanExposureUrl(badFeed.toUri().toString());
         dataProperties.setRefreshOnStartup(true);
 
-        assertThatThrownBy(() -> dataBootstrapService.refresh(true)).hasMessageContaining("unknown nplstatus");
+        dataBootstrapService.refresh(true);
 
-        assertThat(jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM npl_site_boundaries WHERE site_name LIKE 'OLD %'", Integer.class))
-                .isEqualTo(RefreshFixtures.SITES);
-        assertThat(jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM npl_human_exposure WHERE site_name LIKE 'OLD %'", Integer.class))
-                .isEqualTo(RefreshFixtures.SITES);
+        assertThat(namesLike("npl_site_boundaries", "NEW")).isEqualTo(RefreshFixtures.SITES);
+        assertThat(namesLike("npl_human_exposure", "OLD")).isEqualTo(RefreshFixtures.SITES);
         assertThat(count("site_seo_page_cache")).isEqualTo(RefreshFixtures.FINAL_SITES);
-        assertThat(count("state_page_cache")).isEqualTo(1);
+        assertThat(status("npl_boundaries")).containsEntry("last_status", "LOADED");
+        Map<String, Object> exposure = status("human_exposure");
+        assertThat(exposure.get("last_status")).isEqualTo("FAILED");
+        assertThat((String) exposure.get("last_error")).isEqualTo("Human exposure feed has unknown nplstatus values: [FINAL]");
+        // The identity still describes the live (OLD) feed.
+        assertThat(exposure.get("source_url")).isNotEqualTo(badFeed.toUri().toString());
     }
 
     @Test
-    void rejectedBoundaryFile_saysWhatFailed_andLeavesLiveDataUntouched() throws Exception {
+    void rejectedBoundaryFile_withLiveData_saysWhatFailed_keepsLiveBoundaries_andStillUpdatesTheFeed() throws Exception {
         load("OLD", true);
+        String liveUrl = dataProperties.getNplBoundariesUrl();
         Path boundaries = RefreshFixtures.writeBoundaries(dir.resolve("dup.geojson"), "NEW");
         // The second site reuses the first site's EPA_ID.
         Files.writeString(boundaries, Files.readString(boundaries).replace(RefreshFixtures.epaId(1) + "\"", RefreshFixtures.epaId(0) + "\""));
         dataProperties.setNplBoundariesUrl(boundaries.toUri().toString());
         dataProperties.setHumanExposureUrl(RefreshFixtures.writeExposure(dir.resolve("e.json"), "NEW").toUri().toString());
-        dataProperties.setRefreshOnStartup(true);
+        dataProperties.setRefreshOnStartup(false);
+
+        dataBootstrapService.refresh(true);
+
+        assertThat(namesLike("npl_site_boundaries", "OLD")).isEqualTo(RefreshFixtures.SITES);
+        assertThat(namesLike("npl_human_exposure", "NEW")).isEqualTo(RefreshFixtures.SITES);
+        Map<String, Object> record = status("npl_boundaries");
+        assertThat(record.get("last_status")).isEqualTo("FAILED");
+        assertThat(record.get("last_error"))
+                .isEqualTo("NPL boundary file rejected: 1 duplicate EPA_ID values (" + RefreshFixtures.epaId(0) + ")");
+        // Still the old URL, so the changed URL is retried on the next refresh.
+        assertThat(record.get("source_url")).isEqualTo(liveUrl);
+        assertThat(count("npl_site_boundaries_staging")).isZero();
+    }
+
+    @Test
+    void unreachableSources_withLiveData_doNotStopTheRefresh() throws Exception {
+        load("OLD", true);
+        dataProperties.setNplBoundariesUrl("file:///nonexistent/release/npl_site_boundaries.geojson");
+        dataProperties.setHumanExposureUrl("file:///nonexistent/feed.json");
+        jdbcTemplate.update("DELETE FROM site_seo_page_cache WHERE epa_id = ?", RefreshFixtures.epaId(0));
+
+        dataBootstrapService.refresh(true);
+
+        assertThat(namesLike("npl_site_boundaries", "OLD")).isEqualTo(RefreshFixtures.SITES);
+        assertThat(namesLike("npl_human_exposure", "OLD")).isEqualTo(RefreshFixtures.SITES);
+        // Startup still rebuilds the caches from the live data.
+        assertThat(count("site_seo_page_cache")).isEqualTo(RefreshFixtures.FINAL_SITES);
+        assertThat(status("npl_boundaries").get("last_error"))
+                .isEqualTo("NPL boundary file: file not found: /nonexistent/release/npl_site_boundaries.geojson");
+        assertThat(status("human_exposure").get("last_error")).isEqualTo("Human exposure feed: file not found: /nonexistent/feed.json");
+        assertThat(sitemapService.currentSitemap()).contains("/site/" + RefreshFixtures.epaId(0));
+    }
+
+    @Test
+    void firstBoot_withABadSource_abortsAndSwapsNothing() throws Exception {
+        Path boundaries = RefreshFixtures.writeBoundaries(dir.resolve("first.geojson"), "NEW");
+        dataProperties.setNplBoundariesUrl(boundaries.toUri().toString());
+        dataProperties.setHumanExposureUrl("file:///nonexistent/feed.json");
 
         assertThatThrownBy(() -> dataBootstrapService.refresh(true))
-                .isInstanceOf(SourceRejectedException.class)
-                .hasMessage("NPL boundary file rejected: 1 duplicate EPA_ID values (" + RefreshFixtures.epaId(0) + ")");
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Human exposure feed failed and no data is live yet: Human exposure feed: file not found: "
+                        + "/nonexistent/feed.json");
 
-        assertThat(jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM npl_site_boundaries WHERE site_name LIKE 'OLD %'", Integer.class))
-                .isEqualTo(RefreshFixtures.SITES);
+        assertThat(count("npl_site_boundaries")).isZero();
+        assertThat(status("human_exposure").get("last_status")).isEqualTo("FAILED");
+    }
+
+    @Test
+    void failureInsideTheSwap_rollsEverythingBack() throws Exception {
+        load("OLD", true);
+        jdbcTemplate.execute("""
+                CREATE FUNCTION test_fail_state_insert() RETURNS trigger LANGUAGE plpgsql AS
+                $$ BEGIN RAISE EXCEPTION 'injected failure'; END $$
+                """);
+        jdbcTemplate.execute("CREATE TRIGGER test_fail_state_insert BEFORE INSERT ON state_page_cache "
+                + "FOR EACH ROW EXECUTE FUNCTION test_fail_state_insert()");
+        try {
+            dataProperties.setNplBoundariesUrl(
+                    RefreshFixtures.writeBoundaries(dir.resolve("new.geojson"), "NEW").toUri().toString());
+            dataProperties.setHumanExposureUrl(
+                    RefreshFixtures.writeExposure(dir.resolve("new.json"), "NEW").toUri().toString());
+
+            dataBootstrapService.refresh(true);
+        } finally {
+            jdbcTemplate.execute("DROP TRIGGER test_fail_state_insert ON state_page_cache");
+            jdbcTemplate.execute("DROP FUNCTION test_fail_state_insert()");
+        }
+
+        assertThat(namesLike("npl_site_boundaries", "OLD")).isEqualTo(RefreshFixtures.SITES);
+        assertThat(namesLike("npl_human_exposure", "OLD")).isEqualTo(RefreshFixtures.SITES);
+        assertThat(namesLike("site_seo_page_cache", "OLD")).isEqualTo(RefreshFixtures.FINAL_SITES);
+        assertThat(count("state_page_cache")).isEqualTo(1);
+        assertThat(status("npl_boundaries").get("last_status")).isEqualTo("FAILED");
+        assertThat((String) status("human_exposure").get("last_error")).startsWith("swap rolled back: ")
+                .contains("injected failure");
+        assertThat(status("human_exposure").get("source_url")).isNotEqualTo(dataProperties.getHumanExposureUrl());
     }
 
     @Test
@@ -298,6 +368,15 @@ class DataRefreshIntegrationTest {
         dataProperties.setHumanExposureUrl(exposure.toUri().toString());
         dataProperties.setRefreshOnStartup(reloadBoundaries);
         dataBootstrapService.refresh(true);
+    }
+
+    private int namesLike(String table, String prefix) {
+        return jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM " + table + " WHERE site_name LIKE ?", Integer.class, prefix + " %");
+    }
+
+    private Map<String, Object> status(String dataset) {
+        return jdbcTemplate.queryForMap("SELECT * FROM data_source_state WHERE dataset = ?", dataset);
     }
 
     private int count(String table) {

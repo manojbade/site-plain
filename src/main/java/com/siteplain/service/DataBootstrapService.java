@@ -18,6 +18,7 @@ import com.siteplain.data.repository.SeoPageRepository;
 import com.siteplain.data.repository.StatePageRepository;
 import com.siteplain.service.DataRefreshPolicyService.Action;
 import com.siteplain.service.DataRefreshPolicyService.BoundaryDecision;
+import java.io.IOException;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -101,7 +102,8 @@ public class DataBootstrapService implements ApplicationRunner {
                     dataProperties.getMaxAgeDays());
         }
         if (!dataProperties.isBootstrapEnabled()) {
-            log.info("Site Plain bootstrap is disabled");
+            log.info("Site Plain bootstrap is disabled; serving the data already in the database");
+            sitemapService.rebuild();
             return;
         }
         refresh(true);
@@ -112,28 +114,109 @@ public class DataBootstrapService implements ApplicationRunner {
      * reloading), exposure (when the feed changed) and both page caches in one transaction. A failure
      * before commit leaves live data as it was. At startup the caches are rebuilt even when no source
      * changed, because a deploy can change how they are derived (labels, the active-site view).
+     *
+     * Failure policy: when boundaries are already live, a failed download, a rejected file or a failed
+     * swap is logged at ERROR, recorded in data_source_state, and the app keeps serving the live data;
+     * the other source still goes ahead. Only an empty database (first boot) makes this throw, which
+     * aborts startup, since the app has nothing to serve.
      */
     public void refresh(boolean startup) throws Exception {
+        boolean firstBoot = !nplBoundaryRepository.liveDataPresent();
         BoundaryDecision decision = dataRefreshPolicyService.decideBoundaries(startup);
         log.info("NPL boundaries: {} ({})", decision.action(), decision.reason());
         if (decision.action() == Action.ADOPT) {
             adoptLiveBoundaries();
         }
-        StagedSource boundaries = decision.action() == Action.RELOAD ? stageBoundaries() : null;
-        StagedSource exposure = stageHumanExposure(boundaries != null);
+        StagedSource boundaries = null;
+        if (decision.action() == Action.RELOAD) {
+            try {
+                boundaries = stageBoundaries();
+            } catch (Exception e) {
+                sourceFailed(DataSourceRepository.BOUNDARIES, NPL_BOUNDARY_FILE, e, firstBoot);
+            }
+        }
+        StagedSource exposure = null;
+        boolean exposureFailed = false;
+        try {
+            exposure = stageHumanExposure(boundaries != null);
+        } catch (Exception e) {
+            exposureFailed = true;
+            sourceFailed(DataSourceRepository.EXPOSURE, HUMAN_EXPOSURE_FEED, e, firstBoot);
+        }
         if (boundaries != null && exposure == null) {
-            checkActiveSiteDrop(humanExposureRepository.projectedActiveSiteCount(true, false),
-                    nplBoundaryRepository.countActiveSites());
+            try {
+                checkActiveSiteDrop(humanExposureRepository.projectedActiveSiteCount(true, false),
+                        nplBoundaryRepository.countActiveSites());
+            } catch (IllegalStateException e) {
+                sourceFailed(DataSourceRepository.BOUNDARIES, NPL_BOUNDARY_FILE, e, firstBoot);
+                boundaries = null;
+            }
         }
         if (boundaries == null && exposure == null && !startup) {
-            dataSourceRepository.recordUnchanged(DataSourceRepository.EXPOSURE);
+            if (!exposureFailed) {
+                dataSourceRepository.recordUnchanged(DataSourceRepository.EXPOSURE);
+            }
+            clearStaging();
             log.info("Data refresh done: no source changed");
             return;
         }
-        swapIntoLive(boundaries, exposure);
-        if (exposure == null) {
+        try {
+            swapIntoLive(boundaries, exposure);
+        } catch (RuntimeException e) {
+            // The transaction rolled back, so live data is as it was.
+            String reason = "swap rolled back: " + describe(e);
+            if (boundaries != null) {
+                recordFailure(DataSourceRepository.BOUNDARIES, reason);
+            }
+            if (exposure != null) {
+                recordFailure(DataSourceRepository.EXPOSURE, reason);
+            }
+            clearStaging();
+            if (firstBoot) {
+                throw new IllegalStateException("Initial data load failed with no live data to serve: " + reason, e);
+            }
+            log.error("Data refresh failed; keeping the live data: {}", reason, e);
+            sitemapService.rebuild();
+            return;
+        }
+        if (exposure == null && !exposureFailed) {
             dataSourceRepository.recordUnchanged(DataSourceRepository.EXPOSURE);
         }
+    }
+
+    /**
+     * Records a failed source and logs it at ERROR, or throws when there is no live data to fall back
+     * on. Staging is left for the next load to clear; nothing live has changed.
+     */
+    private void sourceFailed(String dataset, String label, Exception e, boolean firstBoot) {
+        if (e instanceof InterruptedException) {
+            Thread.currentThread().interrupt();
+        }
+        String reason = describe(e);
+        recordFailure(dataset, reason);
+        if (firstBoot) {
+            throw new IllegalStateException(label + " failed and no data is live yet: " + reason, e);
+        }
+        if (e instanceof SourceRejectedException || e instanceof IOException) {
+            log.error("{} refresh failed; keeping the live data: {}", label, reason);
+        } else {
+            log.error("{} refresh failed; keeping the live data: {}", label, reason, e);
+        }
+    }
+
+    private void recordFailure(String dataset, String reason) {
+        try {
+            dataSourceRepository.recordFailure(dataset, reason);
+        } catch (RuntimeException dbError) {
+            log.error("Could not record the {} failure in data_source_state", dataset, dbError);
+        }
+    }
+
+    static String describe(Exception e) {
+        if (e instanceof SourceRejectedException || e instanceof IOException || e instanceof IllegalStateException) {
+            return e.getMessage();
+        }
+        return e.getClass().getSimpleName() + ": " + e.getMessage();
     }
 
     /** First boot with V7 on a database whose boundaries predate data_source_state: no reload. */
@@ -215,23 +298,39 @@ public class DataBootstrapService implements ApplicationRunner {
             return new int[] {seoCount, statePageCacheBuilder.rebuild()};
         });
         long swapMillis = (System.nanoTime() - started) / 1_000_000;
-        // After commit: fresh planner statistics for the replaced tables, then empty staging.
-        if (boundaries != null) {
-            nplBoundaryRepository.analyzeLive();
+        try {
+            // After commit: fresh planner statistics for the replaced tables, then empty staging.
+            if (boundaries != null) {
+                nplBoundaryRepository.analyzeLive();
+            }
+            if (exposure != null) {
+                humanExposureRepository.analyzeLive();
+            }
+            seoPageRepository.analyzeSiteCache();
+            statePageRepository.analyze();
+        } catch (RuntimeException e) {
+            log.warn("ANALYZE after the data swap failed; autovacuum will analyze later", e);
         }
-        if (exposure != null) {
-            humanExposureRepository.analyzeLive();
+        clearStaging();
+        try {
+            sitemapService.rebuild();
+        } catch (RuntimeException e) {
+            log.error("Sitemap rebuild after the data swap failed; /sitemap.xml keeps its previous content", e);
         }
-        seoPageRepository.analyzeSiteCache();
-        statePageRepository.analyze();
-        nplBoundaryRepository.clearStaging();
-        humanExposureRepository.clearStaging();
-        sitemapService.rebuild();
-        log.info("Data refresh done in a {} ms swap. Boundaries {}, exposure {}. Sites: {}, SEO pages: {}, State pages: {}",
+        log.info("Data refresh done in a {} ms swap. Boundaries {}, exposure {}. SEO pages: {}, State pages: {}",
                 swapMillis,
                 boundaries == null ? "unchanged" : "reloaded (" + boundaries.rows() + " rows)",
                 exposure == null ? "unchanged" : "replaced (" + exposure.rows() + " rows)",
-                nplBoundaryRepository.countActiveSites(), cacheCounts[0], cacheCounts[1]);
+                cacheCounts[0], cacheCounts[1]);
+    }
+
+    private void clearStaging() {
+        try {
+            nplBoundaryRepository.clearStaging();
+            humanExposureRepository.clearStaging();
+        } catch (RuntimeException e) {
+            log.warn("Could not clear the staging tables", e);
+        }
     }
 
     /** Identity and counts of a validated, staged source, kept after its temp file is deleted. */

@@ -1,8 +1,10 @@
 package com.siteplain.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -71,7 +73,7 @@ class DataBootstrapServiceTest {
     }
 
     @Test
-    void refresh_withAllStatusesSpelledOut_neverSwapsOrRebuilds() throws Exception {
+    void firstBoot_withAllStatusesSpelledOut_abortsWithoutSwappingOrRebuilding() throws Exception {
         DataProperties properties = new DataProperties();
         properties.setHumanExposureUrl("file:///feed.json");
         DataRefreshPolicyService policy = mock(DataRefreshPolicyService.class);
@@ -100,10 +102,38 @@ class DataBootstrapServiceTest {
                 mock(StatePageRepository.class), sitemapService,
                 mock(PlatformTransactionManager.class));
 
-        assertThatThrownBy(() -> service.refresh(true)).isInstanceOf(IllegalStateException.class);
+        // No boundaries are live (the mock reports none), so the rejected feed aborts startup.
+        assertThatThrownBy(() -> service.refresh(true)).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("no data is live yet: Human exposure feed has unknown nplstatus values");
         verify(exposureRepository, never()).replaceLiveFromStaging();
         verify(seoBuilder, never()).rebuild();
         verify(stateBuilder, never()).rebuild();
         verify(sitemapService, never()).rebuild();
+    }
+
+    @Test
+    void disabledBootstrap_stillBuildsTheSitemapFromTheLiveCaches() throws Exception {
+        DataProperties properties = new DataProperties();
+        properties.setBootstrapEnabled(false);
+        SitemapService sitemapService = mock(SitemapService.class);
+        DataRefreshPolicyService policy = mock(DataRefreshPolicyService.class);
+        DataBootstrapService service = new DataBootstrapService(properties, policy, mock(DataSourceRepository.class),
+                mock(SourceDownloader.class), mock(NplBoundaryLoader.class), mock(HumanExposureLoader.class),
+                mock(NplBoundaryRepository.class), mock(HumanExposureRepository.class), mock(SeoPageCacheBuilder.class),
+                mock(StatePageCacheBuilder.class), mock(SeoPageRepository.class), mock(StatePageRepository.class),
+                sitemapService, mock(PlatformTransactionManager.class));
+
+        service.run(null);
+
+        verify(sitemapService).rebuild();
+        verify(policy, never()).decideBoundaries(anyBoolean());
+    }
+
+    @Test
+    void describe_keepsRejectionMessagesAndNamesOtherExceptions() {
+        assertThat(DataBootstrapService.describe(new java.io.IOException("Human exposure feed: HTTP 503 from x")))
+                .isEqualTo("Human exposure feed: HTTP 503 from x");
+        assertThat(DataBootstrapService.describe(new IllegalArgumentException("bad")))
+                .isEqualTo("IllegalArgumentException: bad");
     }
 }
