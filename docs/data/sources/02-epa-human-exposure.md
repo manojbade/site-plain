@@ -7,7 +7,7 @@ The user-facing status signal. For each Superfund site, EPA reports whether huma
 - URL: `https://www3.epa.gov/semsjson/Human_Exposure_Site_List.json` (~1.3 MB)
 - Configured via `SITEPLAIN_DATA_HUMAN_EXPOSURE_URL` (this is also the built-in default)
 - Cadence: continuous. EPA updates exposure assessments as cleanups progress, so this feed changes far more often than the boundaries.
-- No credentials, no archiving. It is small and is downloaded on every deploy; it is swapped in only when its SHA-256 differs from the live feed's.
+- No credentials, no archiving. It is small and is downloaded on every deploy and once a day (08:30 UTC by default); it is swapped in only when its SHA-256 differs from the live feed's.
 
 ## Load mechanics
 
@@ -56,7 +56,7 @@ The exact mapping lives in `ExposureStatusMapper`. Red/yellow/green reflects EPA
 
 ## Refresh
 
-None. The feed is checked on every deploy and swapped in when it changed; `site_seo_page_cache`, `state_page_cache` and the sitemap are rebuilt on every startup. To pick up the latest exposure status, redeploy (or restart). If EPA is down or the feed is rejected, the app starts on the live rows and `data_source_state.last_error` says why.
+Automatic. The feed is checked on every deploy and by a daily scheduled refresh (`SITEPLAIN_DATA_SCHEDULED_REFRESH_CRON`, default `0 30 8 * * *` UTC), and swapped in only when it changed, together with `site_seo_page_cache` and `state_page_cache` in one transaction as on startup; the sitemap is rebuilt after each run. An unchanged feed only updates `data_source_state.last_checked_at` (`last_status = UNCHANGED`). At startup the caches and sitemap are rebuilt even when the feed did not change. If EPA is down or the feed is rejected, the live rows stay, the app keeps serving, and `data_source_state.last_error` says why; the next run tries again. To pick it up sooner, restart the service.
 
 ## Quirks
 
