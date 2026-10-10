@@ -37,7 +37,11 @@ public class NplBoundaryRepository {
         return liveCount() > 0;
     }
 
-    public void upsertStaging(String epaId,
+    /**
+     * Plain INSERT: the loader rejects a file with duplicate EPA_IDs instead of letting the last one
+     * win. ST_Multi stores a Polygon feature as the MultiPolygon the column requires.
+     */
+    public void insertStaging(String epaId,
                               String siteName,
                               String stateCode,
                               String nplStatusCode,
@@ -47,14 +51,7 @@ public class NplBoundaryRepository {
                 INSERT INTO npl_site_boundaries_staging
                   (epa_id, site_name, state_code, npl_status_code, epa_url, geom, loaded_at)
                 VALUES
-                  (?, ?, ?, ?, ?, ST_SetSRID(ST_GeomFromGeoJSON(?), 4326), ?)
-                ON CONFLICT (epa_id) DO UPDATE SET
-                  site_name = EXCLUDED.site_name,
-                  state_code = EXCLUDED.state_code,
-                  npl_status_code = EXCLUDED.npl_status_code,
-                  epa_url = EXCLUDED.epa_url,
-                  geom = EXCLUDED.geom,
-                  loaded_at = EXCLUDED.loaded_at
+                  (?, ?, ?, ?, ?, ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON(?), 4326)), ?)
                 """,
                 epaId, siteName, stateCode, nplStatusCode, epaUrl, geometryJson,
                 Timestamp.valueOf(LocalDateTime.now()));

@@ -81,7 +81,7 @@ class ActiveSiteDefinitionIntegrationTest {
         insertBoundary("GAT000000008", "Relisted Test Site", "D");
 
         Path fixture = new ClassPathResource("fixtures/human-exposure-sample.json").getFile().toPath();
-        assertThat(humanExposureLoader.loadIntoStaging(fixture)).isEqualTo(7);
+        assertThat(humanExposureLoader.loadIntoStaging(fixture).staged()).isEqualTo(7);
         humanExposureRepository.replaceLiveFromStaging();
         seoPageCacheBuilder.rebuild();
         statePageCacheBuilder.rebuild();

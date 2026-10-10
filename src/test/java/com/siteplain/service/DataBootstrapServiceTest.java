@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 
 import com.siteplain.config.DataProperties;
 import com.siteplain.data.loader.DownloadedFile;
+import com.siteplain.data.loader.ExposureFeedStats;
 import com.siteplain.data.loader.HumanExposureLoader;
 import com.siteplain.data.loader.NplBoundaryLoader;
 import com.siteplain.data.loader.SeoPageCacheBuilder;
@@ -22,6 +23,7 @@ import com.siteplain.data.repository.NplBoundaryRepository;
 import com.siteplain.data.repository.SeoPageRepository;
 import com.siteplain.data.repository.StatePageRepository;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -79,7 +81,11 @@ class DataBootstrapServiceTest {
         StatePageCacheBuilder stateBuilder = mock(StatePageCacheBuilder.class);
         SitemapService sitemapService = mock(SitemapService.class);
         when(policy.shouldRefreshBoundaries()).thenReturn(false);
-        when(loader.loadIntoStaging(any(Path.class))).thenReturn(1905);
+        ExposureFeedStats stats = mock(ExposureFeedStats.class);
+        when(stats.problems()).thenReturn(List.of());
+        when(stats.staged()).thenReturn(1905);
+        when(stats.unknownStatusCodes()).thenReturn(Map.of());
+        when(loader.loadIntoStaging(any(Path.class))).thenReturn(stats);
         SourceDownloader downloader = mock(SourceDownloader.class);
         when(downloader.download(anyString(), anyString(), any(), anyLong()))
                 .thenReturn(new DownloadedFile("file:///feed.json", Path.of("/nonexistent/feed.json"), 10, "ab", null));

@@ -1,16 +1,20 @@
 package com.siteplain.service;
 
 import com.siteplain.config.DataProperties;
+import com.siteplain.data.loader.BoundaryFileStats;
 import com.siteplain.data.loader.DownloadedFile;
+import com.siteplain.data.loader.ExposureFeedStats;
 import com.siteplain.data.loader.HumanExposureLoader;
 import com.siteplain.data.loader.NplBoundaryLoader;
 import com.siteplain.data.loader.SeoPageCacheBuilder;
 import com.siteplain.data.loader.SourceDownloader;
+import com.siteplain.data.loader.SourceRejectedException;
 import com.siteplain.data.loader.StatePageCacheBuilder;
 import com.siteplain.data.repository.HumanExposureRepository;
 import com.siteplain.data.repository.NplBoundaryRepository;
 import com.siteplain.data.repository.SeoPageRepository;
 import com.siteplain.data.repository.StatePageRepository;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
@@ -105,30 +109,34 @@ public class DataBootstrapService implements ApplicationRunner {
             throw new IllegalStateException("SITEPLAIN_DATA_NPL_BOUNDARIES_URL is required for initial boundary load");
         }
         int liveCount = nplBoundaryRepository.liveCount();
-        int stagingCount;
+        BoundaryFileStats stats;
         try (DownloadedFile file = sourceDownloader.download(dataProperties.getNplBoundariesUrl(), "NPL boundary file",
                 dataProperties.getBoundariesDownloadTimeout(), dataProperties.getBoundariesMaxSize().toBytes())) {
-            stagingCount = nplBoundaryLoader.loadIntoStaging(file.path());
+            stats = nplBoundaryLoader.loadIntoStaging(file.path());
         }
-        if (stagingCount <= 0) {
-            throw new IllegalStateException("NPL boundary staging load produced zero rows");
+        List<String> problems = stats.problems(liveCount);
+        if (!problems.isEmpty()) {
+            throw new SourceRejectedException("NPL boundary file", problems);
         }
-        if (liveCount > 0 && stagingCount < (liveCount * 0.9)) {
-            throw new IllegalStateException("Boundary staging row count dropped below 90% of live count");
-        }
-        log.info("NPL boundaries loaded into staging: {} rows", stagingCount);
+        log.info("NPL boundaries loaded into staging: {} rows, {} Final", stats.staged(), stats.finalCount());
         return true;
     }
 
     private int stageHumanExposure(boolean boundariesStaged) throws Exception {
-        int exposureCount;
+        ExposureFeedStats stats;
         try (DownloadedFile file = sourceDownloader.download(dataProperties.getHumanExposureUrl(), "Human exposure feed",
                 dataProperties.getHumanExposureDownloadTimeout(), dataProperties.getHumanExposureMaxSize().toBytes())) {
-            exposureCount = humanExposureLoader.loadIntoStaging(file.path());
+            stats = humanExposureLoader.loadIntoStaging(file.path());
         }
-        if (exposureCount <= 1500) {
-            throw new IllegalStateException("Human exposure staging row count is unexpectedly low: " + exposureCount);
+        List<String> problems = stats.problems();
+        if (!problems.isEmpty()) {
+            throw new SourceRejectedException("Human exposure feed", problems);
         }
+        if (!stats.unknownStatusCodes().isEmpty()) {
+            // Not fatal: such a site shows "Exposure status: CODE" until ExposureStatusMapper learns the code.
+            log.warn("Human exposure feed has humexposurestscode values with no label: {}", stats.unknownStatusCodes());
+        }
+        int exposureCount = stats.staged();
         checkExposureStatuses(humanExposureRepository.stagingStatusCounts(),
                 humanExposureRepository.stagingActiveSiteCount(boundariesStaged),
                 nplBoundaryRepository.countActiveSites());

@@ -24,7 +24,8 @@ public class HumanExposureRepository {
         jdbcTemplate.update("TRUNCATE npl_human_exposure_staging");
     }
 
-    public void upsertStaging(String epaId,
+    /** Plain INSERT: the loader rejects a feed with duplicate epaids instead of letting the last one win. */
+    public void insertStaging(String epaId,
                               String statusCode,
                               String pathwayDescription,
                               String nplStatus,
@@ -35,14 +36,6 @@ public class HumanExposureRepository {
                 INSERT INTO npl_human_exposure_staging
                   (epa_id, humexposurestscode, humanexposurepathdesc, npl_status, site_name, state_code, epa_url, loaded_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT (epa_id) DO UPDATE SET
-                  humexposurestscode = EXCLUDED.humexposurestscode,
-                  humanexposurepathdesc = EXCLUDED.humanexposurepathdesc,
-                  npl_status = EXCLUDED.npl_status,
-                  site_name = EXCLUDED.site_name,
-                  state_code = EXCLUDED.state_code,
-                  epa_url = EXCLUDED.epa_url,
-                  loaded_at = EXCLUDED.loaded_at
                 """,
                 epaId, statusCode, pathwayDescription, nplStatus, siteName, stateCode, epaUrl,
                 Timestamp.valueOf(LocalDateTime.now()));

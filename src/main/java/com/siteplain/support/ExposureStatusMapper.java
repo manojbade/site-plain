@@ -1,8 +1,17 @@
 package com.siteplain.support;
 
+import java.util.Set;
+
 public final class ExposureStatusMapper {
 
+    /** Codes with a label of their own; any other code is shown as "Exposure status: CODE". */
+    private static final Set<String> KNOWN_CODES = Set.of("HENC", "HEUC", "HEPR", "HHPA", "HEID", "HEIC");
+
     private ExposureStatusMapper() {
+    }
+
+    public static boolean isKnownCode(String code) {
+        return code != null && KNOWN_CODES.contains(code.toUpperCase());
     }
 
     public static String label(String code) {

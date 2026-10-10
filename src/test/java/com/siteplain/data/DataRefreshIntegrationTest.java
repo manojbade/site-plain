@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.siteplain.config.DataProperties;
+import com.siteplain.data.loader.SourceRejectedException;
+import com.siteplain.data.repository.NplBoundaryRepository;
 import com.siteplain.service.DataBootstrapService;
 import com.siteplain.service.SitemapService;
 import java.nio.file.Files;
@@ -36,6 +38,9 @@ class DataRefreshIntegrationTest {
 
     @Autowired
     private SitemapService sitemapService;
+
+    @Autowired
+    private NplBoundaryRepository nplBoundaryRepository;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -140,6 +145,35 @@ class DataRefreshIntegrationTest {
                 .isEqualTo(RefreshFixtures.SITES);
         assertThat(count("site_seo_page_cache")).isEqualTo(RefreshFixtures.FINAL_SITES);
         assertThat(count("state_page_cache")).isEqualTo(1);
+    }
+
+    @Test
+    void rejectedBoundaryFile_saysWhatFailed_andLeavesLiveDataUntouched() throws Exception {
+        load("OLD", true);
+        Path boundaries = RefreshFixtures.writeBoundaries(dir.resolve("dup.geojson"), "NEW");
+        // The second site reuses the first site's EPA_ID.
+        Files.writeString(boundaries, Files.readString(boundaries).replace(RefreshFixtures.epaId(1) + "\"", RefreshFixtures.epaId(0) + "\""));
+        dataProperties.setNplBoundariesUrl(boundaries.toUri().toString());
+        dataProperties.setHumanExposureUrl(RefreshFixtures.writeExposure(dir.resolve("e.json"), "NEW").toUri().toString());
+        dataProperties.setRefreshOnStartup(true);
+
+        assertThatThrownBy(dataBootstrapService::refreshIfNeeded)
+                .isInstanceOf(SourceRejectedException.class)
+                .hasMessage("NPL boundary file rejected: 1 duplicate EPA_ID values (" + RefreshFixtures.epaId(0) + ")");
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM npl_site_boundaries WHERE site_name LIKE 'OLD %'", Integer.class))
+                .isEqualTo(RefreshFixtures.SITES);
+    }
+
+    @Test
+    void polygonFeature_isStoredAsMultiPolygon() {
+        nplBoundaryRepository.insertStaging("GAR999999999", "POLYGON SITE", "GA", "F", null,
+                "{\"type\":\"Polygon\",\"coordinates\":[[[-84.4,33.77],[-84.39,33.77],[-84.39,33.78],[-84.4,33.77]]]}");
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT GeometryType(geom) FROM npl_site_boundaries_staging WHERE epa_id = 'GAR999999999'", String.class))
+                .isEqualTo("MULTIPOLYGON");
     }
 
     private void load(String namePrefix, boolean reloadBoundaries) throws Exception {
