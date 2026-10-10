@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -97,7 +98,8 @@ class DataBootstrapServiceTest {
         when(exposureRepository.projectedActiveSiteCount(false, true)).thenReturn(0);
         when(boundaryRepository.countActiveSites()).thenReturn(1343);
 
-        DataBootstrapService service = new DataBootstrapService(properties, policy, mock(DataSourceRepository.class), downloader, mock(NplBoundaryLoader.class), loader,
+        DataBootstrapService service = new DataBootstrapService(properties, policy, mock(DataSourceRepository.class),
+                runningLock(), downloader, mock(NplBoundaryLoader.class), loader,
                 boundaryRepository, exposureRepository, seoBuilder, stateBuilder, mock(SeoPageRepository.class),
                 mock(StatePageRepository.class), sitemapService,
                 mock(PlatformTransactionManager.class));
@@ -117,7 +119,7 @@ class DataBootstrapServiceTest {
         properties.setBootstrapEnabled(false);
         SitemapService sitemapService = mock(SitemapService.class);
         DataRefreshPolicyService policy = mock(DataRefreshPolicyService.class);
-        DataBootstrapService service = new DataBootstrapService(properties, policy, mock(DataSourceRepository.class),
+        DataBootstrapService service = new DataBootstrapService(properties, policy, mock(DataSourceRepository.class), runningLock(),
                 mock(SourceDownloader.class), mock(NplBoundaryLoader.class), mock(HumanExposureLoader.class),
                 mock(NplBoundaryRepository.class), mock(HumanExposureRepository.class), mock(SeoPageCacheBuilder.class),
                 mock(StatePageCacheBuilder.class), mock(SeoPageRepository.class), mock(StatePageRepository.class),
@@ -127,6 +129,37 @@ class DataBootstrapServiceTest {
 
         verify(sitemapService).rebuild();
         verify(policy, never()).decideBoundaries(anyBoolean());
+    }
+
+    @Test
+    void refresh_whenAnotherInstanceHoldsTheLock_skipsAndStillBuildsTheSitemapAtStartup() throws Exception {
+        DataRefreshLock lock = mock(DataRefreshLock.class);
+        when(lock.runExclusively(any())).thenReturn(false);
+        DataRefreshPolicyService policy = mock(DataRefreshPolicyService.class);
+        SourceDownloader downloader = mock(SourceDownloader.class);
+        SitemapService sitemapService = mock(SitemapService.class);
+        DataBootstrapService service = new DataBootstrapService(new DataProperties(), policy, mock(DataSourceRepository.class),
+                lock, downloader, mock(NplBoundaryLoader.class), mock(HumanExposureLoader.class),
+                mock(NplBoundaryRepository.class), mock(HumanExposureRepository.class), mock(SeoPageCacheBuilder.class),
+                mock(StatePageCacheBuilder.class), mock(SeoPageRepository.class), mock(StatePageRepository.class),
+                sitemapService, mock(PlatformTransactionManager.class));
+
+        service.refresh(true);
+        service.refresh(false);
+
+        verify(policy, never()).decideBoundaries(anyBoolean());
+        verify(downloader, never()).download(anyString(), anyString(), any(), anyLong());
+        verify(sitemapService, times(1)).rebuild();
+    }
+
+    /** A lock that is always free: runs the work. */
+    private static DataRefreshLock runningLock() throws Exception {
+        DataRefreshLock lock = mock(DataRefreshLock.class);
+        when(lock.runExclusively(any())).thenAnswer(invocation -> {
+            invocation.<DataRefreshLock.Work>getArgument(0).run();
+            return true;
+        });
+        return lock;
     }
 
     @Test

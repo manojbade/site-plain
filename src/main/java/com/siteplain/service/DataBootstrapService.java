@@ -52,6 +52,7 @@ public class DataBootstrapService implements ApplicationRunner {
     private final DataProperties dataProperties;
     private final DataRefreshPolicyService dataRefreshPolicyService;
     private final DataSourceRepository dataSourceRepository;
+    private final DataRefreshLock dataRefreshLock;
     private final SourceDownloader sourceDownloader;
     private final NplBoundaryLoader nplBoundaryLoader;
     private final HumanExposureLoader humanExposureLoader;
@@ -67,6 +68,7 @@ public class DataBootstrapService implements ApplicationRunner {
     public DataBootstrapService(DataProperties dataProperties,
                                 DataRefreshPolicyService dataRefreshPolicyService,
                                 DataSourceRepository dataSourceRepository,
+                                DataRefreshLock dataRefreshLock,
                                 SourceDownloader sourceDownloader,
                                 NplBoundaryLoader nplBoundaryLoader,
                                 HumanExposureLoader humanExposureLoader,
@@ -81,6 +83,7 @@ public class DataBootstrapService implements ApplicationRunner {
         this.dataProperties = dataProperties;
         this.dataRefreshPolicyService = dataRefreshPolicyService;
         this.dataSourceRepository = dataSourceRepository;
+        this.dataRefreshLock = dataRefreshLock;
         this.sourceDownloader = sourceDownloader;
         this.nplBoundaryLoader = nplBoundaryLoader;
         this.humanExposureLoader = humanExposureLoader;
@@ -119,8 +122,21 @@ public class DataBootstrapService implements ApplicationRunner {
      * swap is logged at ERROR, recorded in data_source_state, and the app keeps serving the live data;
      * the other source still goes ahead. Only an empty database (first boot) makes this throw, which
      * aborts startup, since the app has nothing to serve.
+     *
+     * The whole refresh runs under DataRefreshLock; when another instance holds it this one skips.
      */
     public void refresh(boolean startup) throws Exception {
+        boolean ran = dataRefreshLock.runExclusively(() -> refreshLocked(startup));
+        if (!ran) {
+            log.warn("Data refresh skipped: another instance holds the refresh lock (an overlapping deploy or a "
+                    + "scheduled refresh); serving the data already live");
+            if (startup) {
+                sitemapService.rebuild();
+            }
+        }
+    }
+
+    private void refreshLocked(boolean startup) throws Exception {
         boolean firstBoot = !nplBoundaryRepository.liveDataPresent();
         BoundaryDecision decision = dataRefreshPolicyService.decideBoundaries(startup);
         log.info("NPL boundaries: {} ({})", decision.action(), decision.reason());

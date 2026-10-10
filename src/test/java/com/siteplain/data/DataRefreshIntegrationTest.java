@@ -7,8 +7,11 @@ import com.siteplain.config.DataProperties;
 import com.siteplain.data.repository.HumanExposureRepository;
 import com.siteplain.data.repository.NplBoundaryRepository;
 import com.siteplain.service.DataBootstrapService;
+import com.siteplain.service.DataRefreshLockAccess;
 import com.siteplain.service.SitemapService;
 import java.nio.file.Files;
+import java.sql.Connection;
+import javax.sql.DataSource;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +50,9 @@ class DataRefreshIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private DataSource dataSource;
 
     @TempDir
     Path dir;
@@ -238,6 +244,61 @@ class DataRefreshIntegrationTest {
         assertThat((String) status("human_exposure").get("last_error")).startsWith("swap rolled back: ")
                 .contains("injected failure");
         assertThat(status("human_exposure").get("source_url")).isNotEqualTo(dataProperties.getHumanExposureUrl());
+    }
+
+    @Test
+    void refresh_skipsWhileAnotherSessionHoldsTheRefreshLock() throws Exception {
+        load("OLD", true);
+        dataProperties.setNplBoundariesUrl(
+                RefreshFixtures.writeBoundaries(dir.resolve("new.geojson"), "NEW").toUri().toString());
+        dataProperties.setHumanExposureUrl(RefreshFixtures.writeExposure(dir.resolve("new.json"), "NEW").toUri().toString());
+        try (Connection otherInstance = dataSource.getConnection()) {
+            otherInstance.createStatement().execute("SELECT pg_advisory_lock(" + DataRefreshLockAccess.key() + ")");
+
+            dataBootstrapService.refresh(true);
+
+            assertThat(namesLike("npl_site_boundaries", "OLD")).isEqualTo(RefreshFixtures.SITES);
+            assertThat(namesLike("npl_human_exposure", "OLD")).isEqualTo(RefreshFixtures.SITES);
+            otherInstance.createStatement().execute("SELECT pg_advisory_unlock(" + DataRefreshLockAccess.key() + ")");
+        }
+
+        dataBootstrapService.refresh(true);
+
+        assertThat(namesLike("npl_site_boundaries", "NEW")).isEqualTo(RefreshFixtures.SITES);
+        assertThat(namesLike("npl_human_exposure", "NEW")).isEqualTo(RefreshFixtures.SITES);
+    }
+
+    @Test
+    void concurrentRefreshes_runOneAtATime() throws Exception {
+        load("OLD", true);
+        dataProperties.setNplBoundariesUrl(
+                RefreshFixtures.writeBoundaries(dir.resolve("new.geojson"), "NEW").toUri().toString());
+        dataProperties.setHumanExposureUrl(RefreshFixtures.writeExposure(dir.resolve("new.json"), "NEW").toUri().toString());
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+            List<java.util.concurrent.Future<?>> runs = new java.util.ArrayList<>();
+            for (int i = 0; i < 2; i++) {
+                runs.add(pool.submit(() -> {
+                    start.await();
+                    dataBootstrapService.refresh(false);
+                    return null;
+                }));
+            }
+            start.countDown();
+            for (java.util.concurrent.Future<?> run : runs) {
+                run.get();
+            }
+        } finally {
+            pool.shutdown();
+        }
+
+        // Whichever ran second either skipped on the lock or found nothing changed; never a mix.
+        assertThat(namesLike("npl_site_boundaries", "NEW")).isEqualTo(RefreshFixtures.SITES);
+        assertThat(namesLike("npl_human_exposure", "NEW")).isEqualTo(RefreshFixtures.SITES);
+        assertThat(count("site_seo_page_cache")).isEqualTo(RefreshFixtures.FINAL_SITES);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory'", Integer.class)).isZero();
     }
 
     @Test
