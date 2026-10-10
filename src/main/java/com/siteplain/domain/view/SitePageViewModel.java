@@ -1,8 +1,24 @@
 package com.siteplain.domain.view;
 
 import com.siteplain.domain.model.SeoPageData;
+import com.siteplain.support.StateNames;
 
 public record SitePageViewModel(
         SeoPageData pageData
 ) {
+
+    public String metaDescription() {
+        StringBuilder description = new StringBuilder(pageData.siteName())
+                .append(" is an active EPA Superfund site");
+        if (pageData.stateCode() != null && !pageData.stateCode().isBlank()) {
+            description.append(" in ").append(StateNames.nameFor(pageData.stateCode()));
+        }
+        description.append(". ").append(pageData.exposureStatusLabel()).append(". ");
+        if (pageData.hasBoundary()) {
+            description.append("Enter your address to see your distance from this site.");
+        } else {
+            description.append("EPA has not published a boundary for this site.");
+        }
+        return description.toString();
+    }
 }
