@@ -108,6 +108,19 @@ class ActiveSiteDefinitionIntegrationTest {
     }
 
     @Test
+    void stagingGateQueries_matchTheFeedAndTheActiveSiteView() {
+        // Staging still holds the fixture feed after the swap, so its projected active count must
+        // equal the view's count, and the status counts are the fixture's (lowercase f uppercased).
+        assertThat(humanExposureRepository.stagingStatusCounts()).containsExactly(Map.entry("D", 2), Map.entry("F", 5));
+        assertThat(humanExposureRepository.stagingActiveSiteCount()).isEqualTo(nplBoundaryRepository.countActiveSites());
+
+        jdbcTemplate.update("UPDATE npl_human_exposure_staging SET npl_status = 'FINAL' WHERE npl_status = 'F'");
+        assertThat(humanExposureRepository.stagingStatusCounts()).containsKey("FINAL").doesNotContainKey("F");
+        assertThat(humanExposureRepository.stagingActiveSiteCount())
+                .isEqualTo(nplBoundaryRepository.countActiveSites() - 5);
+    }
+
+    @Test
     void exposureLoader_storesRowsWithoutBoundaryWithStateAndUrl() {
         Map<String, Object> unmapped = jdbcTemplate.queryForMap(
                 "SELECT state_code, epa_url, npl_status FROM npl_human_exposure WHERE epa_id = 'GAT000000003'");

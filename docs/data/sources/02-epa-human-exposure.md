@@ -21,7 +21,7 @@ Fields read: `epaid`, `humexposurestscode`, `humanexposurepathdesc`, `nplstatus`
 - `state_code` is kept when it is a known state or territory code (`StateNames`). Otherwise the first two letters of the EPA ID are used if they are a known code, else the state is left null. On the 2026-10-10 feed every row has a valid `state_code`.
 - `friendlyurl` has no scheme in the feed (`www.epa.gov/superfund/...`), so `https://` is added. A scheme-less URL on another host is dropped, and the page falls back to the EPA search link.
 
-Guard: `DataBootstrapService` throws if the feed yields 1,500 or fewer rows with an `epaid` (1,905 on 2026-10-10).
+Guards: `DataBootstrapService` throws, before the swap, if the feed yields 1,500 or fewer rows with an `epaid` (1,905 on 2026-10-10), if any non-null `nplstatus` is outside `F, D, P, N, R, S`, if the `F` row count is outside 1,200..1,450 (1,337 on 2026-10-10), or if the active site count would drop more than 5% below the current one. Because `nplstatus` decides which sites are active, a vocabulary change such as `Final` for `F` would otherwise empty the site.
 
 ## Active sites
 
@@ -59,4 +59,4 @@ None. This reloads automatically on every deploy as part of `refreshHumanExposur
 ## Quirks
 
 - Exposure rows no longer depend on the boundary set, but a boundary reload still truncates `npl_human_exposure`; the reload that follows in the same bootstrap restores it.
-- A partial upstream schema change (one renamed field) would not trip the >1,500 guard. After a deploy, sanity-check the `humexposurestscode` distribution if anything looks off.
+- A partial upstream schema change (one renamed field other than `nplstatus`) would not trip the guards. After a deploy, sanity-check the `humexposurestscode` distribution if anything looks off.

@@ -3,7 +3,9 @@ package com.siteplain.data.repository;
 import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -48,6 +50,35 @@ public class HumanExposureRepository {
 
     public int stagingCount() {
         Integer count = jdbcTemplate.queryForObject("SELECT count(*) FROM npl_human_exposure_staging", Integer.class);
+        return count == null ? 0 : count;
+    }
+
+    /** Staging row counts per non-null npl_status value, for the bootstrap gates. */
+    public Map<String, Integer> stagingStatusCounts() {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        jdbcTemplate.query("""
+                SELECT npl_status, count(*) AS row_count
+                FROM npl_human_exposure_staging
+                WHERE npl_status IS NOT NULL
+                GROUP BY npl_status
+                ORDER BY npl_status
+                """, rs -> {
+            counts.put(rs.getString("npl_status"), rs.getInt("row_count"));
+        });
+        return counts;
+    }
+
+    /**
+     * How many sites active_npl_sites would hold if staging were swapped in now: the same rule as
+     * the view (feed status, else the boundary status, equal to 'F'), read against staging.
+     */
+    public int stagingActiveSiteCount() {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT count(*)
+                FROM npl_site_boundaries s
+                FULL OUTER JOIN npl_human_exposure_staging h ON h.epa_id = s.epa_id
+                WHERE COALESCE(h.npl_status, s.npl_status_code) = 'F'
+                """, Integer.class);
         return count == null ? 0 : count;
     }
 

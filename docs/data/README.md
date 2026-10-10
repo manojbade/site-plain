@@ -107,7 +107,7 @@ SELECT count(*), count(*) FILTER (WHERE NOT has_boundary) FROM active_npl_sites;
 
 SELECT npl_status_code, count(*) FROM npl_site_boundaries GROUP BY 1 ORDER BY 2 DESC;
 
--- Human exposure reloads every deploy (every feed row, ~1,905); must be well over 1,500 or bootstrap aborts.
+-- Human exposure reloads every deploy (every feed row, ~1,905); must be well over 1,500, with ~1,337 F rows, or bootstrap aborts.
 SELECT count(*) FROM npl_human_exposure;
 SELECT humexposurestscode, count(*) FROM npl_human_exposure GROUP BY 1 ORDER BY 2 DESC;
 
@@ -136,7 +136,7 @@ curl -s "https://site-plain.com/actuator/health"                                
 ## Failure Behavior
 
 - **Boundary reload on a populated table:** if the download yields zero rows, or fewer than 90% of the current live count, the load aborts with an exception and the swap does not happen. The previous data stays live. Check deploy logs.
-- **Human exposure reload:** if the feed returns 1,500 or fewer rows, bootstrap throws. On a first boot (empty DB) this aborts startup; the app will not come up with no data.
+- **Human exposure reload:** if the feed returns 1,500 or fewer rows, has an unknown `nplstatus` value, has an `F` count outside 1,200..1,450, or would drop the active site count by more than 5%, bootstrap throws before the swap. On a first boot (empty DB) this aborts startup; the app will not come up with no data.
 - **Boundaries are never touched by a routine deploy** unless the refresh policy triggers (flag set, table empty, or older than `MAX_AGE_DAYS`).
 - **A boundary reload against a dead URL fails startup, not just the refresh.** When the policy triggers a reload and `SITEPLAIN_DATA_NPL_BOUNDARIES_URL` 404s or is unreachable, `NplBoundaryLoader` throws and `DataBootstrapService` propagates it, so the container fails to boot. The dangerous case is silent: with `MAX_AGE_DAYS=90` and `REFRESH_ON_STARTUP=false`, everything looks fine for 90 days, then the next restart past that age tries to reload and takes the site down if the release URL has since been deleted or renamed. Keep the URL valid for as long as it is referenced, or delete old releases only after pointing the var at a new one.
 
@@ -147,7 +147,7 @@ curl -s "https://site-plain.com/actuator/health"                                
 | Risk | Mitigation |
 |------|-----------|
 | EPA renames the GDB layer (currently `SITE_BOUNDARIES_SF`) | `convert_npl_to_geojson.py` fails at read. Update `LAYER` in the script. Confirm with `python3 -c "import pyogrio; print(pyogrio.list_layers('.../NPL_Boundaries.gdb'))"`. |
-| EPA changes human exposure JSON field names | `HumanExposureLoader` silently loads fewer rows; the >1,500 guard catches a total failure but not a partial one. Check `humexposurestscode` distribution after a deploy. |
+| EPA changes human exposure JSON field names | `HumanExposureLoader` silently loads fewer rows; the >1,500 and `nplstatus` guards catch a total failure or a broken `nplstatus`, but not a partial loss of other fields. Check `humexposurestscode` distribution after a deploy. |
 | data.gov dataset slug changes | The dataset moved from `npl-superfund-site-boundaries-epa10` to `npl-superfund-site-boundaries-epa`. Find the current GDB link under the "Zipped File Geodatabase" resource. |
 | GitHub release URL changes | Update `SITEPLAIN_DATA_NPL_BOUNDARIES_URL` in Railway. |
 | PostGIS missing on a fresh Railway Postgres | `CREATE EXTENSION IF NOT EXISTS postgis` is in V1; the DB image must support PostGIS. |
