@@ -297,8 +297,10 @@ class DataRefreshIntegrationTest {
         assertThat(namesLike("npl_site_boundaries", "NEW")).isEqualTo(RefreshFixtures.SITES);
         assertThat(namesLike("npl_human_exposure", "NEW")).isEqualTo(RefreshFixtures.SITES);
         assertThat(count("site_seo_page_cache")).isEqualTo(RefreshFixtures.FINAL_SITES);
-        assertThat(jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory'", Integer.class)).isZero();
+        // Only this database: other apps on the same Postgres server may hold their own advisory locks.
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' "
+                + "AND database = (SELECT oid FROM pg_database WHERE datname = current_database())", Integer.class))
+                .isZero();
     }
 
     @Test
