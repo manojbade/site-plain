@@ -2,6 +2,8 @@ package com.siteplain.data.loader;
 
 import com.siteplain.data.repository.StatePageRepository;
 import com.siteplain.support.StateNames;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -13,13 +15,13 @@ public class StatePageCacheBuilder {
         this.statePageRepository = statePageRepository;
     }
 
+    /** Replaces the cache from site_seo_page_cache, so it must run after SeoPageCacheBuilder.rebuild(). */
     public int rebuild() {
-        statePageRepository.clear();
-        int count = 0;
-        for (StatePageRepository.StateSiteCountRow row : statePageRepository.findSiteCounts()) {
-            statePageRepository.insert(row.stateCode(), StateNames.nameFor(row.stateCode()), row.siteCount());
-            count++;
+        Map<String, String> namesByCode = new LinkedHashMap<>();
+        for (String code : statePageRepository.findCachedStateCodes()) {
+            namesByCode.put(code, StateNames.nameFor(code));
         }
-        return count;
+        statePageRepository.clear();
+        return statePageRepository.insertFromSiteCache(namesByCode);
     }
 }

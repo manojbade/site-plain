@@ -15,6 +15,8 @@ import com.siteplain.data.loader.SeoPageCacheBuilder;
 import com.siteplain.data.loader.StatePageCacheBuilder;
 import com.siteplain.data.repository.HumanExposureRepository;
 import com.siteplain.data.repository.NplBoundaryRepository;
+import com.siteplain.data.repository.SeoPageRepository;
+import com.siteplain.data.repository.StatePageRepository;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -74,15 +76,16 @@ class DataBootstrapServiceTest {
         when(policy.shouldRefreshBoundaries()).thenReturn(false);
         when(loader.loadIntoStaging(anyString())).thenReturn(1905);
         when(exposureRepository.stagingStatusCounts()).thenReturn(Map.of("FINAL", 1337, "DELETED", 466, "NOT NPL", 102));
-        when(exposureRepository.stagingActiveSiteCount()).thenReturn(0);
+        when(exposureRepository.stagingActiveSiteCount(false)).thenReturn(0);
         when(boundaryRepository.countActiveSites()).thenReturn(1343);
 
         DataBootstrapService service = new DataBootstrapService(properties, policy, mock(NplBoundaryLoader.class), loader,
-                boundaryRepository, exposureRepository, seoBuilder, stateBuilder, sitemapService,
+                boundaryRepository, exposureRepository, seoBuilder, stateBuilder, mock(SeoPageRepository.class),
+                mock(StatePageRepository.class), sitemapService,
                 mock(PlatformTransactionManager.class));
 
         assertThatThrownBy(service::refreshIfNeeded).isInstanceOf(IllegalStateException.class);
-        verify(exposureRepository, never()).swapStagingToLive();
+        verify(exposureRepository, never()).replaceLiveFromStaging();
         verify(seoBuilder, never()).rebuild();
         verify(stateBuilder, never()).rebuild();
         verify(sitemapService, never()).rebuild();

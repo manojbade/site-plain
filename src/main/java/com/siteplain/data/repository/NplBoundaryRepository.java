@@ -60,20 +60,26 @@ public class NplBoundaryRepository {
                 Timestamp.valueOf(LocalDateTime.now()));
     }
 
-    public void swapStagingToLive() {
-        jdbcTemplate.update("""
-                TRUNCATE site_seo_page_cache,
-                         state_page_cache,
-                         npl_human_exposure,
-                         npl_site_boundaries
-                """);
+    /**
+     * Replaces the live rows with staging. Called only inside the refresh transaction: DELETE, not
+     * TRUNCATE, so lookups keep reading the old rows (MVCC) until commit instead of blocking on an
+     * ACCESS EXCLUSIVE lock.
+     */
+    public void replaceLiveFromStaging() {
+        jdbcTemplate.update("DELETE FROM npl_site_boundaries");
         jdbcTemplate.update("""
                 INSERT INTO npl_site_boundaries (epa_id, site_name, state_code, npl_status_code, epa_url, geom, loaded_at)
                 SELECT epa_id, site_name, state_code, npl_status_code, epa_url, geom, loaded_at
                 FROM npl_site_boundaries_staging
                 """);
-        // TRUNCATE drops the planner's row estimates, and until autovacuum analyzes the new rows the
-        // lookup skips idx_npl_boundaries_geog and runs ST_DWithin on every row (about 0.8 s).
+    }
+
+    /**
+     * Run after the refresh commits. A full replace leaves the planner's row estimates stale, and until
+     * autovacuum analyzes the new rows the lookup skips idx_npl_boundaries_geog and runs ST_DWithin
+     * on every row (about 0.8 s).
+     */
+    public void analyzeLive() {
         jdbcTemplate.execute("ANALYZE npl_site_boundaries");
     }
 

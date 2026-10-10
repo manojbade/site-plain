@@ -7,6 +7,8 @@ import com.siteplain.data.loader.SeoPageCacheBuilder;
 import com.siteplain.data.loader.StatePageCacheBuilder;
 import com.siteplain.data.repository.HumanExposureRepository;
 import com.siteplain.data.repository.NplBoundaryRepository;
+import com.siteplain.data.repository.SeoPageRepository;
+import com.siteplain.data.repository.StatePageRepository;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
@@ -40,6 +42,8 @@ public class DataBootstrapService implements ApplicationRunner {
     private final HumanExposureRepository humanExposureRepository;
     private final SeoPageCacheBuilder seoPageCacheBuilder;
     private final StatePageCacheBuilder statePageCacheBuilder;
+    private final SeoPageRepository seoPageRepository;
+    private final StatePageRepository statePageRepository;
     private final SitemapService sitemapService;
     private final TransactionTemplate transactionTemplate;
 
@@ -51,6 +55,8 @@ public class DataBootstrapService implements ApplicationRunner {
                                 HumanExposureRepository humanExposureRepository,
                                 SeoPageCacheBuilder seoPageCacheBuilder,
                                 StatePageCacheBuilder statePageCacheBuilder,
+                                SeoPageRepository seoPageRepository,
+                                StatePageRepository statePageRepository,
                                 SitemapService sitemapService,
                                 PlatformTransactionManager transactionManager) {
         this.dataProperties = dataProperties;
@@ -61,6 +67,8 @@ public class DataBootstrapService implements ApplicationRunner {
         this.humanExposureRepository = humanExposureRepository;
         this.seoPageCacheBuilder = seoPageCacheBuilder;
         this.statePageCacheBuilder = statePageCacheBuilder;
+        this.seoPageRepository = seoPageRepository;
+        this.statePageRepository = statePageRepository;
         this.sitemapService = sitemapService;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
@@ -74,14 +82,19 @@ public class DataBootstrapService implements ApplicationRunner {
         refreshIfNeeded();
     }
 
+    /**
+     * Downloads, stages and validates every source first, then replaces boundaries (when reloading),
+     * exposure and both page caches in one transaction. A failure before commit leaves live data as it was.
+     */
     public void refreshIfNeeded() throws Exception {
-        refreshBoundariesIfNeeded();
-        refreshHumanExposureAndCaches();
+        boolean boundariesStaged = stageBoundariesIfNeeded();
+        int exposureCount = stageHumanExposure(boundariesStaged);
+        swapIntoLive(boundariesStaged, exposureCount);
     }
 
-    private void refreshBoundariesIfNeeded() throws Exception {
+    private boolean stageBoundariesIfNeeded() throws Exception {
         if (!dataRefreshPolicyService.shouldRefreshBoundaries()) {
-            return;
+            return false;
         }
         if (!StringUtils.hasText(dataProperties.getNplBoundariesUrl())) {
             throw new IllegalStateException("SITEPLAIN_DATA_NPL_BOUNDARIES_URL is required for initial boundary load");
@@ -94,24 +107,50 @@ public class DataBootstrapService implements ApplicationRunner {
         if (liveCount > 0 && stagingCount < (liveCount * 0.9)) {
             throw new IllegalStateException("Boundary staging row count dropped below 90% of live count");
         }
-        transactionTemplate.executeWithoutResult(status -> nplBoundaryRepository.swapStagingToLive());
         log.info("NPL boundaries loaded into staging: {} rows", stagingCount);
+        return true;
     }
 
-    private void refreshHumanExposureAndCaches() throws Exception {
+    private int stageHumanExposure(boolean boundariesStaged) throws Exception {
         int exposureCount = humanExposureLoader.loadIntoStaging(dataProperties.getHumanExposureUrl());
         if (exposureCount <= 1500) {
             throw new IllegalStateException("Human exposure staging row count is unexpectedly low: " + exposureCount);
         }
         checkExposureStatuses(humanExposureRepository.stagingStatusCounts(),
-                humanExposureRepository.stagingActiveSiteCount(),
+                humanExposureRepository.stagingActiveSiteCount(boundariesStaged),
                 nplBoundaryRepository.countActiveSites());
-        humanExposureRepository.swapStagingToLive();
-        int seoCount = seoPageCacheBuilder.rebuild();
-        int stateCount = statePageCacheBuilder.rebuild();
+        return exposureCount;
+    }
+
+    private void swapIntoLive(boolean boundariesStaged, int exposureCount) {
+        long started = System.nanoTime();
+        int[] cacheCounts = transactionTemplate.execute(status -> {
+            if (boundariesStaged) {
+                nplBoundaryRepository.replaceLiveFromStaging();
+            }
+            humanExposureRepository.replaceLiveFromStaging();
+            int seoCount = seoPageCacheBuilder.rebuild();
+            if (seoCount == 0) {
+                // Rolls the whole swap back: the validated sources can never yield zero active sites.
+                throw new IllegalStateException("Refresh would leave no active sites; rolled back");
+            }
+            return new int[] {seoCount, statePageCacheBuilder.rebuild()};
+        });
+        long swapMillis = (System.nanoTime() - started) / 1_000_000;
+        // After commit: fresh planner statistics for the replaced tables, then empty staging.
+        if (boundariesStaged) {
+            nplBoundaryRepository.analyzeLive();
+            nplBoundaryRepository.clearStaging();
+        }
+        humanExposureRepository.analyzeLive();
+        humanExposureRepository.clearStaging();
+        seoPageRepository.analyzeSiteCache();
+        statePageRepository.analyze();
         sitemapService.rebuild();
-        log.info("Bootstrap complete. Sites: {}, Exposure records: {}, SEO pages: {}, State pages: {}",
-                nplBoundaryRepository.countActiveSites(), exposureCount, seoCount, stateCount);
+        log.info("Bootstrap complete in a {} ms swap. Boundaries reloaded: {}, Sites: {}, Exposure records: {}, "
+                        + "SEO pages: {}, State pages: {}",
+                swapMillis, boundariesStaged, nplBoundaryRepository.countActiveSites(), exposureCount,
+                cacheCounts[0], cacheCounts[1]);
     }
 
     /** Throws, before anything live changes, when the staged feed would publish a wrong active site set. */

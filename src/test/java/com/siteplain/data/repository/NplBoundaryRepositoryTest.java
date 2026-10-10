@@ -38,11 +38,20 @@ class NplBoundaryRepositoryTest {
     }
 
     @Test
-    void swapStagingToLive_analyzesTheNewRowsSoTheLookupKeepsItsIndex() {
-        repository.swapStagingToLive();
+    void replaceLiveFromStaging_deletesInsteadOfTruncatingSoReadersAreNotBlocked() {
+        repository.replaceLiveFromStaging();
 
         InOrder order = inOrder(jdbcTemplate);
+        order.verify(jdbcTemplate).update("DELETE FROM npl_site_boundaries");
         order.verify(jdbcTemplate).update(contains("FROM npl_site_boundaries_staging"));
-        order.verify(jdbcTemplate).execute("ANALYZE npl_site_boundaries");
+        verify(jdbcTemplate, never()).update(contains("TRUNCATE"));
+        verify(jdbcTemplate, never()).execute(anyString());
+    }
+
+    @Test
+    void analyzeLive_analyzesTheNewRowsSoTheLookupKeepsItsIndex() {
+        repository.analyzeLive();
+
+        verify(jdbcTemplate).execute("ANALYZE npl_site_boundaries");
     }
 }

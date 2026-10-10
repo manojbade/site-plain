@@ -70,15 +70,17 @@ public class HumanExposureRepository {
 
     /**
      * How many sites active_npl_sites would hold if staging were swapped in now: the same rule as
-     * the view (feed status, else the boundary status, equal to 'F'), read against staging.
+     * the view (feed status, else the boundary status, equal to 'F'), read against the staged
+     * exposure feed and against staged boundaries when boundaries are being reloaded too.
      */
-    public int stagingActiveSiteCount() {
+    public int stagingActiveSiteCount(boolean boundariesStaged) {
+        String boundaries = boundariesStaged ? "npl_site_boundaries_staging" : "npl_site_boundaries";
         Integer count = jdbcTemplate.queryForObject("""
                 SELECT count(*)
-                FROM npl_site_boundaries s
+                FROM %s s
                 FULL OUTER JOIN npl_human_exposure_staging h ON h.epa_id = s.epa_id
                 WHERE COALESCE(h.npl_status, s.npl_status_code) = 'F'
-                """, Integer.class);
+                """.formatted(boundaries), Integer.class);
         return count == null ? 0 : count;
     }
 
@@ -91,12 +93,17 @@ public class HumanExposureRepository {
         return rows.stream().filter(Objects::nonNull).findFirst();
     }
 
-    public void swapStagingToLive() {
-        jdbcTemplate.update("TRUNCATE npl_human_exposure");
+    /** Replaces the live rows with staging; only inside the refresh transaction (DELETE, not TRUNCATE). */
+    public void replaceLiveFromStaging() {
+        jdbcTemplate.update("DELETE FROM npl_human_exposure");
         jdbcTemplate.update("""
                 INSERT INTO npl_human_exposure (epa_id, humexposurestscode, humanexposurepathdesc, npl_status, site_name, state_code, epa_url, loaded_at)
                 SELECT epa_id, humexposurestscode, humanexposurepathdesc, npl_status, site_name, state_code, epa_url, loaded_at
                 FROM npl_human_exposure_staging
                 """);
+    }
+
+    public void analyzeLive() {
+        jdbcTemplate.execute("ANALYZE npl_human_exposure");
     }
 }

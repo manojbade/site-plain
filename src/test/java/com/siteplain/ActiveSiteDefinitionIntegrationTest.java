@@ -81,7 +81,7 @@ class ActiveSiteDefinitionIntegrationTest {
 
         String fixtureUrl = new ClassPathResource("fixtures/human-exposure-sample.json").getURI().toString();
         assertThat(humanExposureLoader.loadIntoStaging(fixtureUrl)).isEqualTo(7);
-        humanExposureRepository.swapStagingToLive();
+        humanExposureRepository.replaceLiveFromStaging();
         seoPageCacheBuilder.rebuild();
         statePageCacheBuilder.rebuild();
         sitemapService.rebuild();
@@ -112,11 +112,11 @@ class ActiveSiteDefinitionIntegrationTest {
         // Staging still holds the fixture feed after the swap, so its projected active count must
         // equal the view's count, and the status counts are the fixture's (lowercase f uppercased).
         assertThat(humanExposureRepository.stagingStatusCounts()).containsExactly(Map.entry("D", 2), Map.entry("F", 5));
-        assertThat(humanExposureRepository.stagingActiveSiteCount()).isEqualTo(nplBoundaryRepository.countActiveSites());
+        assertThat(humanExposureRepository.stagingActiveSiteCount(false)).isEqualTo(nplBoundaryRepository.countActiveSites());
 
         jdbcTemplate.update("UPDATE npl_human_exposure_staging SET npl_status = 'FINAL' WHERE npl_status = 'F'");
         assertThat(humanExposureRepository.stagingStatusCounts()).containsKey("FINAL").doesNotContainKey("F");
-        assertThat(humanExposureRepository.stagingActiveSiteCount())
+        assertThat(humanExposureRepository.stagingActiveSiteCount(false))
                 .isEqualTo(nplBoundaryRepository.countActiveSites() - 5);
     }
 
