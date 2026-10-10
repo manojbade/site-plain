@@ -85,7 +85,8 @@ class SeoPageRepositoryIntegrationTest {
                 "HENC",
                 "Human exposure is NOT currently under control",
                 "Test pathway",
-                "https://example.com/" + epaId
+                "https://example.com/" + epaId,
+                true
         ));
     }
 }

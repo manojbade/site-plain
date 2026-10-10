@@ -20,7 +20,7 @@ public class AboutController {
                 List.of(
                         "Proximity to a site boundary does not mean a property is contaminated.",
                         "EPA site boundaries are not groundwater plume maps.",
-                        "The tool only covers active final NPL sites with boundary geometry."
+                        "Distance results only cover active final NPL sites with an EPA-published boundary. Active sites without one have a site page but no distance."
                 ),
                 List.of(
                         "EPA NPL Superfund Site Boundaries",

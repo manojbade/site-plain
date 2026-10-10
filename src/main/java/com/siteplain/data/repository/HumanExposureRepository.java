@@ -22,19 +22,23 @@ public class HumanExposureRepository {
                               String statusCode,
                               String pathwayDescription,
                               String nplStatus,
-                              String siteName) {
+                              String siteName,
+                              String stateCode,
+                              String epaUrl) {
         jdbcTemplate.update("""
                 INSERT INTO npl_human_exposure_staging
-                  (epa_id, humexposurestscode, humanexposurepathdesc, npl_status, site_name, loaded_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                  (epa_id, humexposurestscode, humanexposurepathdesc, npl_status, site_name, state_code, epa_url, loaded_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (epa_id) DO UPDATE SET
                   humexposurestscode = EXCLUDED.humexposurestscode,
                   humanexposurepathdesc = EXCLUDED.humanexposurepathdesc,
                   npl_status = EXCLUDED.npl_status,
                   site_name = EXCLUDED.site_name,
+                  state_code = EXCLUDED.state_code,
+                  epa_url = EXCLUDED.epa_url,
                   loaded_at = EXCLUDED.loaded_at
                 """,
-                epaId, statusCode, pathwayDescription, nplStatus, siteName,
+                epaId, statusCode, pathwayDescription, nplStatus, siteName, stateCode, epaUrl,
                 Timestamp.valueOf(LocalDateTime.now()));
     }
 
@@ -46,8 +50,8 @@ public class HumanExposureRepository {
     public void swapStagingToLive() {
         jdbcTemplate.update("TRUNCATE npl_human_exposure");
         jdbcTemplate.update("""
-                INSERT INTO npl_human_exposure (epa_id, humexposurestscode, humanexposurepathdesc, npl_status, site_name, loaded_at)
-                SELECT epa_id, humexposurestscode, humanexposurepathdesc, npl_status, site_name, loaded_at
+                INSERT INTO npl_human_exposure (epa_id, humexposurestscode, humanexposurepathdesc, npl_status, site_name, state_code, epa_url, loaded_at)
+                SELECT epa_id, humexposurestscode, humanexposurepathdesc, npl_status, site_name, state_code, epa_url, loaded_at
                 FROM npl_human_exposure_staging
                 """);
     }

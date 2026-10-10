@@ -28,7 +28,10 @@ class ResultsPdfServiceTest {
                 42.48,
                 -71.15,
                 null,
-                null
+                null,
+                1337,
+                List.of(),
+                15
         );
 
         byte[] pdf = service.generateResultsPdf(viewModel);

@@ -100,18 +100,19 @@ The GeoJSON is gitignored (`scripts/npl_site_boundaries.geojson`); the GitHub re
 ## Post-Refresh Verification
 
 ```sql
--- Table holds all statuses (~1,908). This is expected; the app filters to Final at query time.
+-- Table holds all statuses (~1,908). This is expected; the app decides active sites at query time.
 SELECT count(*) FROM npl_site_boundaries;                       -- ~1,908
-SELECT count(*) FROM npl_site_boundaries WHERE npl_status_code = 'F';  -- ~1,328 (user-visible)
+-- User-visible active sites (exposure feed status, boundary status as fallback).
+SELECT count(*), count(*) FILTER (WHERE NOT has_boundary) FROM active_npl_sites;  -- ~1,337, 15 (2026-10-10)
 
 SELECT npl_status_code, count(*) FROM npl_site_boundaries GROUP BY 1 ORDER BY 2 DESC;
 
--- Human exposure reloads every deploy; must be well over 1,500 or bootstrap aborts.
+-- Human exposure reloads every deploy (every feed row, ~1,905); must be well over 1,500 or bootstrap aborts.
 SELECT count(*) FROM npl_human_exposure;
 SELECT humexposurestscode, count(*) FROM npl_human_exposure GROUP BY 1 ORDER BY 2 DESC;
 
--- Derived caches (one row per Final site / per state with a Final site).
-SELECT count(*) FROM site_seo_page_cache;                       -- ~1,328
+-- Derived caches (one row per active site / per state with an active site).
+SELECT count(*) FROM site_seo_page_cache;                       -- same as active_npl_sites
 SELECT state_code, site_count FROM state_page_cache ORDER BY site_count DESC LIMIT 5;  -- NJ, CA, PA near top
 
 -- Load recency and the GIST spatial index.
@@ -135,7 +136,7 @@ curl -s "https://site-plain.com/actuator/health"                                
 ## Failure Behavior
 
 - **Boundary reload on a populated table:** if the download yields zero rows, or fewer than 90% of the current live count, the load aborts with an exception and the swap does not happen. The previous data stays live. Check deploy logs.
-- **Human exposure reload:** if the feed returns 1,500 or fewer matched rows, bootstrap throws. On a first boot (empty DB) this aborts startup; the app will not come up with no data.
+- **Human exposure reload:** if the feed returns 1,500 or fewer rows, bootstrap throws. On a first boot (empty DB) this aborts startup; the app will not come up with no data.
 - **Boundaries are never touched by a routine deploy** unless the refresh policy triggers (flag set, table empty, or older than `MAX_AGE_DAYS`).
 - **A boundary reload against a dead URL fails startup, not just the refresh.** When the policy triggers a reload and `SITEPLAIN_DATA_NPL_BOUNDARIES_URL` 404s or is unreachable, `NplBoundaryLoader` throws and `DataBootstrapService` propagates it, so the container fails to boot. The dangerous case is silent: with `MAX_AGE_DAYS=90` and `REFRESH_ON_STARTUP=false`, everything looks fine for 90 days, then the next restart past that age tries to reload and takes the site down if the release URL has since been deleted or renamed. Keep the URL valid for as long as it is referenced, or delete old releases only after pointing the var at a new one.
 

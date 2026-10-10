@@ -9,4 +9,12 @@ public record StatePageViewModel(
         int siteCount,
         List<SeoPageData> sites
 ) {
+
+    public List<SeoPageData> sitesWithBoundary() {
+        return sites.stream().filter(SeoPageData::hasBoundary).toList();
+    }
+
+    public List<SeoPageData> sitesWithoutBoundary() {
+        return sites.stream().filter(site -> !site.hasBoundary()).toList();
+    }
 }

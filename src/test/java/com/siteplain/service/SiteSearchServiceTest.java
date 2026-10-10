@@ -68,7 +68,7 @@ class SiteSearchServiceTest {
     }
 
     private SeoPageData seoPageData(String epaId, String siteName) {
-        return new SeoPageData(epaId, siteName, "GA", "HENC", "Human exposure is NOT currently under control", null, null);
+        return new SeoPageData(epaId, siteName, "GA", "HENC", "Human exposure is NOT currently under control", null, null, true);
     }
 
     private SiteSearchSuggestion suggestion(String epaId, String siteName) {

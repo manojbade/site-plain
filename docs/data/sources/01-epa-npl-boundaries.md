@@ -26,7 +26,7 @@ Reference at 2026-07-11: 2,114 raw features, 1,908 unique sites after dedup, 1,3
 
 ## Status filtering happens at query time, not conversion
 
-Important correction to older notes: the conversion script and the loader keep **all** statuses (~1,908 rows: F, D, N, P, R, A, S). The Final-only filter is applied in SQL at read time (`NplLookupService` and `NplBoundaryRepository.countActiveSites`, both `WHERE npl_status_code = 'F'`). So `SELECT count(*) FROM npl_site_boundaries` returns ~1,908, while the user-visible count is ~1,328.
+The conversion script and the loader keep **all** statuses (~1,908 rows: F, D, N, P, R, A, S). Whether a site is active is decided at read time by the `active_npl_sites` view (migration V5): EPA's human exposure feed `nplstatus` wins, and this file's `NPL_STATUS_CODE` is used only for sites with no exposure row. See [source 02](02-epa-human-exposure.md#active-sites). So `SELECT count(*) FROM npl_site_boundaries` returns ~1,908, while the user-visible count is `SELECT count(*) FROM active_npl_sites` (1,337 with the 2026-10-10 feed: 1,322 with a boundary plus 15 without).
 
 ## Fields used
 
@@ -42,7 +42,7 @@ Important correction to older notes: the conversion script and the loader keep *
 Then `DataBootstrapService` validates and swaps:
 - Abort if staging count is 0.
 - Abort if the table already had data and staging is below 90% of the live count.
-- `NplBoundaryRepository.swapStagingToLive()` runs `TRUNCATE site_seo_page_cache, state_page_cache, npl_human_exposure, npl_site_boundaries` then `INSERT ... SELECT` from staging, in a transaction. Dependents are truncated first because they carry FKs to `npl_site_boundaries(epa_id)`.
+- `NplBoundaryRepository.swapStagingToLive()` runs `TRUNCATE site_seo_page_cache, state_page_cache, npl_human_exposure, npl_site_boundaries` then `INSERT ... SELECT` from staging, in a transaction. The dependent tables no longer carry FKs to `npl_site_boundaries(epa_id)` (dropped in V5); they are still truncated here and rebuilt by the exposure reload that follows.
 
 The GIST index `idx_npl_boundaries_geom` is defined in migration V1 and persists across the swap (the table is truncated, not dropped).
 

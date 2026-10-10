@@ -35,7 +35,7 @@
   </section>
 
   <div class="vstack gap-3">
-    <article class="card shadow-sm" th:each="site : ${viewModel.sites}">
+    <article class="card shadow-sm" th:each="site : ${viewModel.sitesWithBoundary()}">
       <div class="card-body d-flex justify-content-between align-items-start gap-3 flex-wrap">
         <div>
           <h2 class="h5 mb-2"><a th:href="@{/site/{epaId}(epaId=${site.epaId})}" th:text="${site.siteName}">Site Name</a></h2>
@@ -44,6 +44,21 @@
       </div>
     </article>
   </div>
+
+  <section class="mt-4" th:if="${!viewModel.sitesWithoutBoundary().isEmpty()}">
+    <h2 class="h4 mb-2">Active sites with no published boundary</h2>
+    <p class="text-muted">EPA has not published a boundary for these sites, so Site Plain cannot calculate distance to them and they do not appear in address lookup results.</p>
+    <div class="vstack gap-3">
+      <article class="card shadow-sm" th:each="site : ${viewModel.sitesWithoutBoundary()}">
+        <div class="card-body d-flex justify-content-between align-items-start gap-3 flex-wrap">
+          <div>
+            <h3 class="h5 mb-2"><a th:href="@{/site/{epaId}(epaId=${site.epaId})}" th:text="${site.siteName}">Site Name</a></h3>
+            <span th:replace="fragments/exposure-badge :: badge(${site.exposureStatusCode}, ${site.exposureStatusLabel})"></span>
+          </div>
+        </div>
+      </article>
+    </div>
+  </section>
 </main>
 <div th:replace="fragments/footer :: footer"></div>
 </body>

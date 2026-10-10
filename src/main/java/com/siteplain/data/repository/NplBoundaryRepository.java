@@ -37,13 +37,6 @@ public class NplBoundaryRepository {
         return liveCount() > 0;
     }
 
-    public List<String> findAllLiveIds() {
-        return jdbcTemplate.query("""
-                SELECT epa_id
-                FROM npl_site_boundaries
-                """, (rs, rowNum) -> rs.getString("epa_id"));
-    }
-
     public void upsertStaging(String epaId,
                               String siteName,
                               String stateCode,
@@ -83,7 +76,7 @@ public class NplBoundaryRepository {
 
     public int countActiveSites() {
         Integer count = jdbcTemplate.queryForObject("""
-                SELECT count(*) FROM npl_site_boundaries WHERE npl_status_code = 'F'
+                SELECT count(*) FROM active_npl_sites
                 """, Integer.class);
         return count == null ? 0 : count;
     }

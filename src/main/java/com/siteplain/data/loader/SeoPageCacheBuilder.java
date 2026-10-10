@@ -17,7 +17,7 @@ public class SeoPageCacheBuilder {
     public int rebuild() {
         seoPageRepository.clearSiteCache();
         int count = 0;
-        for (SeoPageRepository.ActiveBoundaryRow row : seoPageRepository.findActiveBoundaryRows()) {
+        for (SeoPageRepository.ActiveSiteRow row : seoPageRepository.findActiveSiteRows()) {
             seoPageRepository.insertSiteCacheRow(new SeoPageData(
                     row.epaId(),
                     row.siteName(),
@@ -25,7 +25,8 @@ public class SeoPageCacheBuilder {
                     row.exposureStatusCode(),
                     ExposureStatusMapper.label(row.exposureStatusCode()),
                     row.exposurePathwayDesc(),
-                    row.epaUrl()
+                    row.epaUrl(),
+                    row.hasBoundary()
             ));
             count++;
         }

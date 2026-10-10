@@ -26,8 +26,8 @@ public class SeoPageRepository {
         jdbcTemplate.update("""
                 INSERT INTO site_seo_page_cache
                   (epa_id, site_name, state_code, exposure_status_code, exposure_status_label,
-                   exposure_pathway_desc, epa_url, computed_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                   exposure_pathway_desc, epa_url, has_boundary, computed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 data.epaId(),
                 data.siteName(),
@@ -36,13 +36,14 @@ public class SeoPageRepository {
                 data.exposureStatusLabel(),
                 data.exposurePathwayDescription(),
                 data.epaUrl(),
+                data.hasBoundary(),
                 Timestamp.valueOf(LocalDateTime.now()));
     }
 
     public Optional<SeoPageData> findByEpaId(String epaId) {
         List<SeoPageData> rows = jdbcTemplate.query("""
                 SELECT epa_id, site_name, state_code, exposure_status_code, exposure_status_label,
-                       exposure_pathway_desc, epa_url
+                       exposure_pathway_desc, epa_url, has_boundary
                 FROM site_seo_page_cache
                 WHERE epa_id = ?
                 """, (rs, rowNum) -> new SeoPageData(
@@ -52,7 +53,8 @@ public class SeoPageRepository {
                 rs.getString("exposure_status_code"),
                 rs.getString("exposure_status_label"),
                 rs.getString("exposure_pathway_desc"),
-                rs.getString("epa_url")
+                rs.getString("epa_url"),
+                rs.getBoolean("has_boundary")
         ), epaId);
         return rows.stream().findFirst();
     }
@@ -60,7 +62,7 @@ public class SeoPageRepository {
     public List<SeoPageData> findByStateCode(String stateCode) {
         return jdbcTemplate.query("""
                 SELECT epa_id, site_name, state_code, exposure_status_code, exposure_status_label,
-                       exposure_pathway_desc, epa_url
+                       exposure_pathway_desc, epa_url, has_boundary
                 FROM site_seo_page_cache
                 WHERE state_code = ?
                 ORDER BY lower(site_name) ASC, epa_id ASC
@@ -71,7 +73,8 @@ public class SeoPageRepository {
                 rs.getString("exposure_status_code"),
                 rs.getString("exposure_status_label"),
                 rs.getString("exposure_pathway_desc"),
-                rs.getString("epa_url")
+                rs.getString("epa_url"),
+                rs.getBoolean("has_boundary")
         ), stateCode);
     }
 
@@ -130,31 +133,31 @@ public class SeoPageRepository {
         ), siteName, limit);
     }
 
-    public List<ActiveBoundaryRow> findActiveBoundaryRows() {
+    public List<ActiveSiteRow> findActiveSiteRows() {
         return jdbcTemplate.query("""
-                SELECT s.epa_id, s.site_name, s.state_code, s.epa_url,
-                       h.humexposurestscode, h.humanexposurepathdesc
-                FROM npl_site_boundaries s
-                LEFT JOIN npl_human_exposure h ON h.epa_id = s.epa_id
-                WHERE s.npl_status_code = 'F'
-                ORDER BY s.epa_id ASC
-                """, (rs, rowNum) -> new ActiveBoundaryRow(
+                SELECT epa_id, site_name, state_code, epa_url,
+                       humexposurestscode, humanexposurepathdesc, has_boundary
+                FROM active_npl_sites
+                ORDER BY epa_id ASC
+                """, (rs, rowNum) -> new ActiveSiteRow(
                 rs.getString("epa_id"),
                 rs.getString("site_name"),
                 rs.getString("state_code"),
                 rs.getString("epa_url"),
                 rs.getString("humexposurestscode"),
-                rs.getString("humanexposurepathdesc")
+                rs.getString("humanexposurepathdesc"),
+                rs.getBoolean("has_boundary")
         ));
     }
 
-    public record ActiveBoundaryRow(
+    public record ActiveSiteRow(
             String epaId,
             String siteName,
             String stateCode,
             String epaUrl,
             String exposureStatusCode,
-            String exposurePathwayDesc
+            String exposurePathwayDesc,
+            boolean hasBoundary
     ) {
     }
 }

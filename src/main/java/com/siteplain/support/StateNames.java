@@ -58,10 +58,17 @@ public final class StateNames {
             Map.entry("DC", "District of Columbia"),
             Map.entry("GU", "Guam"),
             Map.entry("PR", "Puerto Rico"),
-            Map.entry("VI", "U.S. Virgin Islands")
+            Map.entry("VI", "U.S. Virgin Islands"),
+            Map.entry("AS", "American Samoa"),
+            Map.entry("MP", "Northern Mariana Islands"),
+            Map.entry("FM", "Federated States of Micronesia")
     );
 
     private StateNames() {
+    }
+
+    public static boolean isKnown(String code) {
+        return code != null && NAMES.containsKey(code.toUpperCase());
     }
 
     public static String nameFor(String code) {

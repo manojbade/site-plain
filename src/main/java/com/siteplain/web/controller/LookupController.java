@@ -9,10 +9,12 @@ import com.siteplain.service.AuditService;
 import com.siteplain.service.GeocodingService;
 import com.siteplain.service.NplLookupService;
 import com.siteplain.service.ResultsPdfService;
+import com.siteplain.support.StateNames;
 import com.siteplain.support.StateResourceRegistry;
 import com.siteplain.web.form.AddressLookupForm;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ContentDisposition;
@@ -151,6 +153,7 @@ public class LookupController {
             siteBoundaryGeojson = buildFeatureCollection(result.sites(), geomMap);
         }
 
+        String stateCode = normalizeStateCode(geocodedAddress.stateCode());
         return new ResultsViewModel(
                 geocodedAddress.rawAddress(),
                 geocodedAddress.normalizedAddress(),
@@ -163,7 +166,10 @@ public class LookupController {
                 lat,
                 lng,
                 siteBoundaryGeojson,
-                StateResourceRegistry.lookup(geocodedAddress.stateCode())
+                StateResourceRegistry.lookup(geocodedAddress.stateCode()),
+                nplBoundaryRepository.countActiveSites(),
+                nplLookupService.findActiveSitesWithoutBoundary(stateCode),
+                nplLookupService.countActiveSitesWithoutBoundary()
         );
     }
 
@@ -180,8 +186,19 @@ public class LookupController {
                 null,
                 null,
                 null,
-                null
+                null,
+                0,
+                List.of(),
+                0
         );
+    }
+
+    private static String normalizeStateCode(String stateCode) {
+        if (stateCode == null) {
+            return null;
+        }
+        String normalized = stateCode.trim().toUpperCase(Locale.ROOT);
+        return StateNames.isKnown(normalized) ? normalized : null;
     }
 
     static String buildFeatureCollection(List<NplSite> sites, Map<String, String> geomMap) {

@@ -77,8 +77,23 @@
 
         <section class="card shadow-sm p-4" th:if="${!viewModel.hasSites}">
           <h2 class="h4">No active EPA Superfund sites found within 3 miles of this address.</h2>
-          <p class="mb-0">The EPA National Priorities List includes 1,328 active sites nationally. Absence from this list does not mean an area is free from contamination.</p>
+          <p class="mb-0">The EPA National Priorities List includes <span th:text="${#numbers.formatInteger(viewModel.activeSiteCount, 1, 'COMMA')}">1,337</span> active sites nationally. Absence from this list does not mean an area is free from contamination.</p>
         </section>
+
+        <section class="card shadow-sm p-4 mt-3" th:if="${!viewModel.stateSitesWithoutBoundary.isEmpty()}">
+          <h2 class="h5">Active sites in this state with no published boundary</h2>
+          <p class="mb-2">EPA has not published a boundary for these active sites, so their distance from this address cannot be calculated and they are not included above:</p>
+          <ul class="mb-0">
+            <li th:each="site : ${viewModel.stateSitesWithoutBoundary}">
+              <a th:href="@{/site/{epaId}(epaId=${site.epaId})}" th:text="${site.siteName}">Site name</a>
+            </li>
+          </ul>
+        </section>
+        <p class="text-muted small mt-3 mb-0"
+           th:if="${viewModel.stateSitesWithoutBoundary.isEmpty() and viewModel.stateCode == null and viewModel.sitesWithoutBoundaryCount > 0}"
+           th:text="'EPA has not published a boundary for ' + ${viewModel.sitesWithoutBoundaryCount} + ' active sites nationwide, so they are not included in distance results. Search by site name to find them.'">
+          EPA has not published a boundary for some active sites.
+        </p>
 
         <section class="card shadow-sm official-resources-card mt-3">
           <div class="card-body">

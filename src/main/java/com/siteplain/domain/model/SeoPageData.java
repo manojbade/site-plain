@@ -7,7 +7,8 @@ public record SeoPageData(
         String exposureStatusCode,
         String exposureStatusLabel,
         String exposurePathwayDescription,
-        String epaUrl
+        String epaUrl,
+        boolean hasBoundary
 ) {
 
     public String effectiveEpaUrl() {

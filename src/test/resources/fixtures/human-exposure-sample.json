@@ -1,0 +1,14 @@
+{
+  "success": true,
+  "data": [
+    {"epaid": "GAT000000001", "sitename": "DELETED TEST SITE", "nplstatus": "D", "humexposurestscode": "HEPR", "humanexposurepathdesc": "", "state_code": "GA", "friendlyurl": "www.epa.gov/superfund/deleted-test-site"},
+    {"epaid": "GAT000000002", "sitename": "MAPPED TEST SITE", "nplstatus": "F", "humexposurestscode": "HENC", "humanexposurepathdesc": "Mapped pathway", "state_code": "GA", "friendlyurl": "www.epa.gov/superfund/mapped-test-site"},
+    {"epaid": "GAT000000003", "sitename": "UNMAPPED TEST SITE", "nplstatus": "F", "humexposurestscode": "HENC", "humanexposurepathdesc": "Unmapped pathway", "state_code": "GA", "friendlyurl": "www.epa.gov/superfund/unmapped-test-site"},
+    {"epaid": "GAT000000004", "sitename": "UNMAPPED DELETED TEST SITE", "nplstatus": "D", "humexposurestscode": "HEUC", "humanexposurepathdesc": "", "state_code": "GA", "friendlyurl": ""},
+    {"epaid": "NNT000000005", "sitename": "UNMAPPED NO STATE TEST SITE", "nplstatus": "F", "humexposurestscode": "HEID", "humanexposurepathdesc": "", "state_code": "", "friendlyurl": "https://www.epa.gov/superfund/no-state-test-site"},
+    {"epaid": "OHT000000006", "sitename": "UNMAPPED PREFIX TEST SITE", "nplstatus": "F", "humexposurestscode": "HEUC", "humanexposurepathdesc": "", "friendlyurl": null},
+    {"epaid": "GAT000000008", "sitename": "RELISTED TEST SITE", "nplstatus": "f", "humexposurestscode": "HEUC", "humanexposurepathdesc": "", "state_code": "ga", "friendlyurl": "www.epa.gov/superfund/relisted-test-site"},
+    {"epaid": null, "sitename": "NO ID", "nplstatus": "F"}
+  ],
+  "meta": {"total_data": 8}
+}

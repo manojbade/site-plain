@@ -88,7 +88,7 @@ class NplLookupServiceIntegrationTest {
                 INSERT INTO npl_human_exposure
                   (epa_id, humexposurestscode, humanexposurepathdesc, npl_status, site_name)
                 VALUES
-                  (?, ?, 'Test pathway description', 'Final', ?)
+                  (?, ?, 'Test pathway description', 'F', ?)
                 """,
                 epaId, statusCode, "Test Site " + epaId);
     }

@@ -36,7 +36,10 @@
       About this site’s exposure pathways:
       <span th:utext="${viewModel.pageData.exposurePathwayDescription}">EPA text</span>
     </p>
-    <form method="post" th:action="@{/lookup}" th:object="${lookupForm}" class="row g-3 mt-3">
+    <div class="alert alert-warning mt-3 mb-0" role="note" th:if="${!viewModel.pageData.hasBoundary}">
+      EPA has not published a boundary for this site, so Site Plain cannot calculate how far an address is from it, and it does not appear in address lookup results. Use the EPA site profile below for its location.
+    </div>
+    <form method="post" th:action="@{/lookup}" th:object="${lookupForm}" class="row g-3 mt-3" th:if="${viewModel.pageData.hasBoundary}">
       <div class="col-12">
         <label class="form-label fw-semibold">Enter your address to see how close you are to this site</label>
       </div>

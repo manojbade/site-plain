@@ -196,6 +196,15 @@
     <p class="muted">Absence from this list does not mean an area is free from contamination.</p>
   </div>
 
+  <div class="summary-box" th:if="${!viewModel.stateSitesWithoutBoundary.isEmpty()}">
+    <p><strong>Active sites in this state with no published boundary</strong></p>
+    <p class="muted">EPA has not published a boundary for these active sites, so their distance from this address cannot be calculated and they are not included above:</p>
+    <p>
+      <span th:each="site, iter : ${viewModel.stateSitesWithoutBoundary}"
+            th:text="${site.siteName} + ' (' + ${site.epaId} + ')' + (${iter.last} ? '' : '; ')">Site name (EPA ID)</span>
+    </p>
+  </div>
+
   <div class="disclaimer-box">
     <p class="disclaimer-title">Built from public federal data. Distance is not exposure.</p>
     <p>

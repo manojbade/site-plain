@@ -17,7 +17,10 @@ public record ResultsViewModel(
         Double lat,
         Double lng,
         String siteBoundaryGeojson,
-        StateResourceRegistry.StateResource stateResource
+        StateResourceRegistry.StateResource stateResource,
+        int activeSiteCount,
+        List<NplSite> stateSitesWithoutBoundary,
+        int sitesWithoutBoundaryCount
 ) {
 
     private static final String EPA_SUPERFUND_SITE_SEARCH_URL = "https://www.epa.gov/superfund/search-superfund-sites-where-you-live";

@@ -13,13 +13,21 @@ The user-facing status signal. For each Superfund site, EPA reports whether huma
 
 `HumanExposureLoader.loadIntoStaging(url)`:
 1. Truncates `npl_human_exposure_staging`.
-2. Builds the set of live `EPA_ID`s from `npl_site_boundaries`.
-3. Reads the JSON `data` array. For each row, uppercases `epaid`; **skips any row whose `epaid` is not a currently loaded boundary**. This is why exposure must load after boundaries, and why a boundary reload truncates exposure (the swap rebuilds it against the new site set).
-4. Upserts matched rows into staging.
+2. Reads the JSON `data` array (an `http(s)://` or `file://` URL). For each row, uppercases `epaid` and skips rows with no `epaid`.
+3. Upserts **every** row into staging, including sites that have no boundary in `npl_site_boundaries` (for example Final sites EPA has not published a polygon for, such as WA2170023418 Puget Sound Naval Shipyard).
 
-Fields read: `epaid`, `humexposurestscode`, `humanexposurepathdesc`, `nplstatus`, `sitename`. Join key is `epaid` (JSON, lowercase) to `EPA_ID` (boundaries, uppercase), both normalized to uppercase.
+Fields read: `epaid`, `humexposurestscode`, `humanexposurepathdesc`, `nplstatus`, `sitename`, `state_code`, `friendlyurl`. Join key is `epaid` (JSON, lowercase) to `EPA_ID` (boundaries, uppercase), both normalized to uppercase.
 
-Guard: `DataBootstrapService` throws if fewer than 1,501 rows matched. On an empty database this aborts startup.
+- `state_code` is kept when it is a known state or territory code (`StateNames`). Otherwise the first two letters of the EPA ID are used if they are a known code, else the state is left null. On the 2026-10-10 feed every row has a valid `state_code`.
+- `friendlyurl` has no scheme in the feed (`www.epa.gov/superfund/...`), so `https://` is added. A scheme-less URL on another host is dropped, and the page falls back to the EPA search link.
+
+Guard: `DataBootstrapService` throws if the feed yields 1,500 or fewer rows with an `epaid` (1,905 on 2026-10-10).
+
+## Active sites
+
+`nplstatus` from this feed is the authority for whether a site is active. A site is active when `COALESCE(npl_human_exposure.npl_status, npl_site_boundaries.npl_status_code) = 'F'`, so the boundary file's status is only a fallback for sites with no exposure row. This is defined once, in the `active_npl_sites` view (migration V5), and every reader uses it: the address lookup, site and state page caches, search, the sitemap and the active-site counts. Example: the six sites EPA deleted on 2026-08-20 (FLD032544587, NYD981486954, ILD980823991, KYD045738291, FLD076027820, GAD990741092) are `F` in the July boundary file but `D` in the feed, so they are not shown.
+
+Active sites with no boundary (`has_boundary = false`, 15 on 2026-10-10) get a `/site/{epa_id}` page with a "no published boundary" notice, appear in search, the sitemap and a separate group on state pages, and are named on result pages for the address's state. They never appear in distance results, and no coordinates are invented for them.
 
 ## Exposure status codes
 
@@ -38,7 +46,7 @@ The exact mapping lives in `ExposureStatusMapper`. Red/yellow/green reflects EPA
 
 | Table | Purpose |
 |-------|---------|
-| `npl_human_exposure` | Live records, FK to `npl_site_boundaries(epa_id)` |
+| `npl_human_exposure` | Live records, one per feed site. No FK to `npl_site_boundaries` since V5, so sites without a boundary can be stored |
 | `npl_human_exposure_staging` | Staging, verified before swap |
 
 ## Refresh
@@ -47,5 +55,5 @@ None. This reloads automatically on every deploy as part of `refreshHumanExposur
 
 ## Quirks
 
-- Because loading filters to known boundary IDs, exposure counts move a little whenever the boundary set changes.
+- Exposure rows no longer depend on the boundary set, but a boundary reload still truncates `npl_human_exposure`; the reload that follows in the same bootstrap restores it.
 - A partial upstream schema change (one renamed field) would not trip the >1,500 guard. After a deploy, sanity-check the `humexposurestscode` distribution if anything looks off.
