@@ -18,11 +18,19 @@ The GDB has six layers. Only `SITE_BOUNDARIES_SF` (MultiPolygon, one whole-site 
 
 ## Deduplication
 
-A single `EPA_ID` can have multiple boundary polygons of different `SITE_FEATURE_TYPE`. The script keeps one per site by this priority (highest first): Comprehensive Site Area, Total Site Polygon/OU Aggregation, Site Boundary, Current Ground Boundary, OU Boundary Aggregation, Extent of Contamination, Contamination Boundary (Groundwater), Contamination Boundary, Other.
+A single `EPA_ID` can have multiple boundary polygons of different `SITE_FEATURE_TYPE`. The script keeps only the rows at the highest priority present for each site (highest first): Comprehensive Site Area, Total Site Polygon/OU Aggregation, Site Boundary, Current Ground Boundary, OU Boundary Aggregation, Extent of Contamination, Contamination Boundary (Groundwater), Contamination Boundary, Other. Null or unmapped types (`<Null>`, `Waste in Place`, `OU Boundary`, and similar variants) rank last.
+
+When several rows tie at that priority, their geometries are **unioned** into one MultiPolygon. Example: ORSFN1002155 Portland Harbor has 100 Comprehensive Site Area polygons; the union is about 32.7 km2, where the old one-row pick kept a 0.013 km2 fragment. The July 2026 GDB has 19 tied sites (18 Final). Attributes come from one row of the winning group, chosen deterministically: non-null `NPL_STATUS_CODE`, then non-null `STATE_CODE`, then latest `LAST_CHANGE_DATE`, then lowest GDB feature id. Invalid geometry is repaired with `make_valid` (24 sites in July, no area change) and every output geometry is a MultiPolygon.
 
 Why: a consumer asking "how close am I?" should get the full designated site area, not a sub-boundary that would make the site look farther away.
 
 Reference at 2026-07-11: 2,114 raw features, 1,908 unique sites after dedup, 1,328 with `NPL_STATUS_CODE = 'F'`.
+
+## Input checks
+
+The converter refuses to write output (exit code 2) when the raw layer has more than 0.5% of rows with a null or blank `EPA_ID`, `NPL_STATUS_CODE` or `STATE_CODE`, when the Final count is outside 1,200 to 1,450, or when a Final site has no state. The thresholds are flags (`--max-null-rate`, `--min-final`, `--max-final`). The 2026-10-10 EDG release fails these checks (5.35% null status, 11.35% null state) and must not be published.
+
+Self-check without a GDB: `python3 scripts/convert_npl_to_geojson.py --self-test`.
 
 ## Status filtering happens at query time, not conversion
 
@@ -50,7 +58,7 @@ A valid Final-site spot-check ID is `GAD990855074` (Firestone Tire & Rubber Co.,
 
 ## Refresh
 
-Follow the standard procedure in the [README](../README.md). Per-source specifics: place the extracted `.gdb` at `/Users/manojbade/workspace/Info/superfund/superfund_audit_data/NPL_Boundaries/NPL_Boundaries.gdb` (or update `GDB_PATH`/`GDB_PATH_ALT` in the script), then run the converter.
+Follow the standard procedure in the [README](../README.md). Per-source specifics: place the extracted `.gdb` at `/Users/manojbade/workspace/Info/superfund/superfund_audit_data/NPL_Boundaries/NPL_Boundaries.gdb`, or pass `--gdb PATH`, then run the converter. `--output PATH` writes somewhere other than `scripts/npl_site_boundaries.geojson`.
 
 ## Quirks
 
