@@ -20,7 +20,8 @@ public record ResultsViewModel(
         StateResourceRegistry.StateResource stateResource,
         int activeSiteCount,
         List<NplSite> stateSitesWithoutBoundary,
-        int sitesWithoutBoundaryCount
+        int sitesWithoutBoundaryCount,
+        String approximateMatch
 ) {
 
     private static final String EPA_SUPERFUND_SITE_SEARCH_URL = "https://www.epa.gov/superfund/search-superfund-sites-where-you-live";

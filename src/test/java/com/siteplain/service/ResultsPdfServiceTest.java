@@ -31,7 +31,8 @@ class ResultsPdfServiceTest {
                 null,
                 1337,
                 List.of(),
-                15
+                15,
+                null
         );
 
         byte[] pdf = service.generateResultsPdf(viewModel);

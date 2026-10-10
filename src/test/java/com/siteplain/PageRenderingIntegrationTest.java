@@ -108,6 +108,32 @@ class PageRenderingIntegrationTest {
     }
 
     @Test
+    void resultsPage_showsApproximateLocationNoticeForCoarseMatches() throws Exception {
+        String approximate = mockMvc.perform(get("/results")
+                        .param("lat", "39.825")
+                        .param("lng", "-84.055")
+                        .param("address", "Dayton, Montgomery County, Ohio, United States")
+                        .param("state", "OH")
+                        .param("geocoder", "nominatim")
+                        .param("approx", "city"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(approximate).contains("Approximate location.")
+                .contains("only to the following\n      <span>city</span>:\n      "
+                        + "<span>Dayton, Montgomery County, Ohio, United States</span>")
+                .contains("approx=city");
+
+        String exact = mockMvc.perform(get("/results")
+                        .param("lat", "39.825")
+                        .param("lng", "-84.055")
+                        .param("address", "1 Main St, Dayton, OH")
+                        .param("state", "OH"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(exact).doesNotContain("Approximate location.");
+    }
+
+    @Test
     void statePage_metaDescriptionNamesState() throws Exception {
         String html = mockMvc.perform(get("/state/OH"))
                 .andExpect(status().isOk())

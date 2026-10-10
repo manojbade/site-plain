@@ -33,7 +33,7 @@
         <div class="d-flex flex-wrap gap-2 align-items-center">
           <a href="/" class="site-nav-button">&#8592; Check another address</a>
           <a class="site-nav-button"
-             th:href="@{/results/pdf(lat=${viewModel.lat}, lng=${viewModel.lng}, address=${viewModel.normalizedAddress}, raw=${viewModel.inputAddress}, state=${viewModel.stateCode})}">
+             th:href="@{/results/pdf(lat=${viewModel.lat}, lng=${viewModel.lng}, address=${viewModel.normalizedAddress}, raw=${viewModel.inputAddress}, state=${viewModel.stateCode}, approx=${viewModel.approximateMatch})}">
             Download results
           </a>
           <input id="share-url" type="text" class="visually-hidden" value="" readonly>
@@ -47,6 +47,14 @@
         </div>
       </div>
     </header>
+
+    <div class="alert alert-warning mb-4" role="note" th:if="${viewModel.approximateMatch != null}">
+      <strong>Approximate location.</strong>
+      This address could not be matched to a street or house, only to the following
+      <span th:text="${viewModel.approximateMatch}">city</span>:
+      <span th:text="${viewModel.normalizedAddress}">Woburn, Massachusetts</span>.
+      Distances are measured from a central point in that area, so they may be off, and sites near the actual address may be missing or listed in error.
+    </div>
 
     <div class="row g-3">
 

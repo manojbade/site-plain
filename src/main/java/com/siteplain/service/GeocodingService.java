@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.siteplain.config.GeocoderProperties;
 import com.siteplain.domain.model.GeocodedAddress;
+import com.siteplain.support.StateNames;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -11,10 +12,15 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Locale;
 import org.springframework.stereotype.Service;
 
 @Service
 public class GeocodingService {
+
+    // Nominatim place_rank 26 and 27 are streets, 28 to 30 are house numbers and buildings.
+    private static final int NOMINATIM_STREET_RANK = 26;
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
@@ -97,26 +103,69 @@ public class GeocodingService {
                     .GET()
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            JsonNode root = objectMapper.readTree(response.body());
-            if (!root.isArray() || root.isEmpty()) {
-                return null;
-            }
-            JsonNode best = root.get(0);
-            JsonNode address = best.path("address");
-            return new GeocodedAddress(
-                    rawAddress,
-                    best.path("display_name").asText(rawAddress),
-                    text(address, "city", "town", "village"),
-                    uppercase(text(address, "state_code")),
-                    normalizeZip(text(address, "postcode")),
-                    "nominatim",
-                    decimal(best, "lat"),
-                    decimal(best, "lon"),
-                    true
-            );
+            return parseNominatim(objectMapper.readTree(response.body()), rawAddress);
         } catch (IOException | InterruptedException ex) {
             return null;
         }
+    }
+
+    GeocodedAddress parseNominatim(JsonNode root, String rawAddress) {
+        if (!root.isArray() || root.isEmpty()) {
+            return null;
+        }
+        JsonNode best = root.get(0);
+        JsonNode address = best.path("address");
+        return new GeocodedAddress(
+                rawAddress,
+                best.path("display_name").asText(rawAddress),
+                text(address, "city", "town", "village"),
+                nominatimStateCode(address),
+                normalizeZip(text(address, "postcode")),
+                "nominatim",
+                decimal(best, "lat"),
+                decimal(best, "lon"),
+                true,
+                nominatimApproximateMatch(best)
+        );
+    }
+
+    /**
+     * jsonv2 with addressdetails gives the state as an ISO 3166-2 code (ISO3166-2-lvl4, for
+     * example US-OH) and as a name (state). There is no state_code field.
+     */
+    private String nominatimStateCode(JsonNode address) {
+        String iso = text(address, "ISO3166-2-lvl4");
+        if (iso != null && iso.toUpperCase(Locale.ROOT).startsWith("US-")) {
+            String code = iso.substring(3).toUpperCase(Locale.ROOT);
+            if (StateNames.isKnown(code)) {
+                return code;
+            }
+        }
+        return StateNames.codeForName(text(address, "state"));
+    }
+
+    /**
+     * Null for a street or house level match. Otherwise a short description of what was matched
+     * (city, ZIP code, county, ...), so the results page can say the location is approximate.
+     */
+    private String nominatimApproximateMatch(JsonNode best) {
+        JsonNode rank = best.path("place_rank");
+        String type = text(best, "addresstype");
+        if (rank.isNumber()) {
+            if (rank.asInt() >= NOMINATIM_STREET_RANK) {
+                return null;
+            }
+        } else if (type != null && List.of("house", "building", "road").contains(type.toLowerCase(Locale.ROOT))) {
+            return null;
+        }
+        if (type == null) {
+            return "area";
+        }
+        return switch (type.toLowerCase(Locale.ROOT)) {
+            case "postcode" -> "ZIP code";
+            case "neighbourhood" -> "neighborhood";
+            default -> type.toLowerCase(Locale.ROOT).replace('_', ' ');
+        };
     }
 
     private String text(JsonNode node, String... fields) {

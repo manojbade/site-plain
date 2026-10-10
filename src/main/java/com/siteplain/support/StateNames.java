@@ -71,6 +71,19 @@ public final class StateNames {
         return code != null && NAMES.containsKey(code.toUpperCase());
     }
 
+    /** The two-letter code for a full state or territory name, or null when the name is not known. */
+    public static String codeForName(String name) {
+        if (name == null || name.isBlank()) {
+            return null;
+        }
+        String trimmed = name.trim();
+        return NAMES.entrySet().stream()
+                .filter(entry -> entry.getValue().equalsIgnoreCase(trimmed))
+                .map(Map.Entry::getKey)
+                .findFirst()
+                .orElse(null);
+    }
+
     public static String nameFor(String code) {
         if (code == null) {
             return null;

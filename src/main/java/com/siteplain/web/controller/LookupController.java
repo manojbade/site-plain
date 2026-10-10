@@ -16,6 +16,7 @@ import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Pattern;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -32,6 +33,8 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 @Controller
 public class LookupController {
+
+    private static final Pattern APPROXIMATE_MATCH_LABEL = Pattern.compile("[A-Za-z ]{1,30}");
 
     private final GeocodingService geocodingService;
     private final NplLookupService nplLookupService;
@@ -76,6 +79,9 @@ public class LookupController {
         redirectAttributes.addAttribute("raw", form.getAddress().trim());
         redirectAttributes.addAttribute("state", geocodedAddress.stateCode());
         redirectAttributes.addAttribute("geocoder", geocodedAddress.geocoderUsed());
+        if (geocodedAddress.approximate()) {
+            redirectAttributes.addAttribute("approx", geocodedAddress.approximateMatch());
+        }
         return "redirect:/results";
     }
 
@@ -86,6 +92,7 @@ public class LookupController {
                               @RequestParam(required = false) String raw,
                               @RequestParam(required = false) String state,
                               @RequestParam(required = false) String geocoder,
+                              @RequestParam(required = false) String approx,
                               @RequestParam(required = false) String error,
                               Model model) {
         if ("unresolved".equalsIgnoreCase(error)) {
@@ -96,7 +103,7 @@ public class LookupController {
             model.addAttribute("viewModel", unresolvedViewModel(null, null));
             return "results";
         }
-        ResultsViewModel viewModel = buildResolvedViewModel(lat, lng, address, raw, state, geocoder, true, true);
+        ResultsViewModel viewModel = buildResolvedViewModel(lat, lng, address, raw, state, geocoder, approx, true, true);
         model.addAttribute("viewModel", viewModel);
         return "results";
     }
@@ -107,11 +114,12 @@ public class LookupController {
                                                      @RequestParam(required = false) String address,
                                                      @RequestParam(required = false) String raw,
                                                      @RequestParam(required = false) String state,
-                                                     @RequestParam(required = false) String geocoder) {
+                                                     @RequestParam(required = false) String geocoder,
+                                                     @RequestParam(required = false) String approx) {
         if (lat == null || lng == null || address == null) {
             return ResponseEntity.badRequest().build();
         }
-        ResultsViewModel viewModel = buildResolvedViewModel(lat, lng, address, raw, state, geocoder, false, false);
+        ResultsViewModel viewModel = buildResolvedViewModel(lat, lng, address, raw, state, geocoder, approx, false, false);
         byte[] pdf = resultsPdfService.generateResultsPdf(viewModel);
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_PDF)
@@ -128,6 +136,7 @@ public class LookupController {
                                                     String raw,
                                                     String state,
                                                     String geocoder,
+                                                    String approx,
                                                     boolean includeMap,
                                                     boolean writeAuditLog) {
         GeocodedAddress geocodedAddress = new GeocodedAddress(
@@ -139,7 +148,8 @@ public class LookupController {
                 geocoder,
                 lat,
                 lng,
-                true
+                true,
+                approximateMatchLabel(approx)
         );
         NplLookupResult result = nplLookupService.findSitesNear(geocodedAddress);
         if (writeAuditLog) {
@@ -169,7 +179,8 @@ public class LookupController {
                 StateResourceRegistry.lookup(geocodedAddress.stateCode()),
                 nplBoundaryRepository.countActiveSites(),
                 nplLookupService.findActiveSitesWithoutBoundary(stateCode),
-                nplLookupService.countActiveSitesWithoutBoundary()
+                nplLookupService.countActiveSitesWithoutBoundary(),
+                geocodedAddress.approximateMatch()
         );
     }
 
@@ -189,8 +200,18 @@ public class LookupController {
                 null,
                 0,
                 List.of(),
-                0
+                0,
+                null
         );
+    }
+
+    /** What a coarse geocoder match was (city, ZIP code, ...), kept to plain words since it comes from the URL. */
+    static String approximateMatchLabel(String approx) {
+        if (approx == null || approx.isBlank()) {
+            return null;
+        }
+        String trimmed = approx.trim();
+        return APPROXIMATE_MATCH_LABEL.matcher(trimmed).matches() ? trimmed : "area";
     }
 
     private static String normalizeStateCode(String stateCode) {

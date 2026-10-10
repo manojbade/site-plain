@@ -161,6 +161,16 @@
     </table>
   </div>
 
+  <div class="summary-box" th:if="${viewModel.approximateMatch != null}">
+    <p><strong>Approximate location.</strong></p>
+    <p class="muted">
+      This address could not be matched to a street or house, only to the following
+      <span th:text="${viewModel.approximateMatch}">city</span>:
+      <span th:text="${viewModel.normalizedAddress}">Woburn, Massachusetts</span>.
+      Distances are measured from a central point in that area, so they may be off, and sites near the actual address may be missing or listed in error.
+    </p>
+  </div>
+
   <div th:if="${viewModel.hasSites}">
     <div class="site-card" th:each="site : ${viewModel.sites}">
       <h2 class="site-title" th:text="${site.siteName}">Site name</h2>
