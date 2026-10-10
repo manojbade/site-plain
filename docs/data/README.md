@@ -65,7 +65,7 @@ EPA refreshes the hosted feature service weekly, but the actual set of NPL sites
    cd ~/workspace/site-plain
    python3 scripts/convert_npl_to_geojson.py
    ```
-   Use `--gdb PATH` and `--output PATH` to point elsewhere. Expect `Final NPL sites (status='F'): ~1,328` and a list of tied sites that were unioned. The file itself holds ~1,908 sites (all statuses); the app decides active sites at query time. The script exits non-zero and writes nothing if the input fails its null-rate or Final-count checks; do not override those flags to force a broken EPA release through.
+   Use `--gdb PATH` and `--output PATH` to point elsewhere. Expect `Final NPL sites (status='F'): ~1,328`, the dropped source-control rows, a list of tied sites that were unioned, and the reviewed oversized unions. If the union review gate fails, check the named site against EPA's site description before adding it to `REVIEWED_UNIONS`. The file itself holds ~1,908 sites (all statuses); the app decides active sites at query time. The script exits non-zero and writes nothing if the input fails its null-rate, Final-count or union review checks; do not override those flags to force a broken EPA release through.
 3. (Optional but recommended) diff against the currently live release to see what changed:
    ```bash
    curl -sL -o old.geojson "$(current SITEPLAIN_DATA_NPL_BOUNDARIES_URL)"

@@ -10,6 +10,20 @@ kept, and when several rows tie at that priority their geometries are unioned
 into one MultiPolygon, so the output covers the full designated site area.
 Rows with a null or unmapped SITE_FEATURE_TYPE rank last (99).
 
+State source-control areas are dropped before ranking: rows whose
+SITE_FEATURE_NAME contains "Source Control" (for example "LDW Uplands Source
+Control Area", WA Department of Ecology, 80.6 km2, and "Portland Harbor
+Uplands ODEQ Source Control", Oregon DEQ, 32.6 km2). They are drainage basins
+mapped for upland source control, not the NPL site footprint, and unioning
+them put homes miles from the Lower Duwamish Waterway "inside" the site.
+
+Union review gate: a tied union is flagged when one of its pieces adds more
+than --union-review-km2 and grows the union of the other pieces by more than
+UNION_REVIEW_MIN_RATIO. Each flagged site must be listed in REVIEWED_UNIONS
+with the largest union area accepted after checking EPA's site description,
+or the script fails. A reviewed site whose union grows past that area fails
+too, so a new oversized piece in a later release is caught.
+
 Priority order (highest first):
   1. Comprehensive Site Area
   2. Total Site Polygon/OU Aggregation
@@ -30,8 +44,9 @@ is repaired with make_valid. Every output geometry is a MultiPolygon.
 Input checks: the script exits non-zero (and writes nothing) when the raw
 layer has a null/blank EPA_ID, NPL_STATUS_CODE or STATE_CODE rate above
 --max-null-rate, or when the Final (NPL_STATUS_CODE='F') site count falls
-outside --min-final..--max-final. These catch broken EPA releases such as the
-2026-10-10 EDG file (239 null STATE_CODE and 113 null NPL_STATUS_CODE rows).
+outside --min-final..--max-final, or when the union review gate fails. The
+first two catch broken EPA releases such as the 2026-10-10 EDG file (239 null
+STATE_CODE and 113 null NPL_STATUS_CODE rows).
 
 Usage:
     pip install geopandas pyogrio
@@ -76,6 +91,28 @@ PRIORITY = {
 }
 
 OUTPUT_COLUMNS = ["EPA_ID", "SITE_NAME", "STATE_CODE", "NPL_STATUS_CODE", "URL_ALIAS_TXT"]
+
+EXCLUDED_FEATURE_NAME_PATTERNS = ["source control"]
+
+# Areas for the union review gate are measured in EPSG:6933 (equal area, valid outside CONUS too).
+AREA_CRS = "EPSG:6933"
+DEFAULT_UNION_REVIEW_KM2 = 2.0
+UNION_REVIEW_MIN_RATIO = 1.5
+
+# Tied unions that trip the review gate, checked against EPA's site descriptions on the July 2026
+# GDB: EPA_ID -> (largest accepted union km2, reason). Union km2 in July is in each reason.
+REVIEWED_UNIONS = {
+    "AK1570028646": (81.5, "Eielson AFB, 80.6 km2: the base boundary ('covers approximately 19,700 acres'), "
+                           "plus a small PFAS piece inside it"),
+    "IDD984666610": (9.6, "Eastern Michaud Flats, 9.4 km2: the FMC and Simplot OUs from the 2010 interim AROD"),
+    "OR0000515759": (6.0, "Black Butte Mine, 5.9 km2: EPA's three OUs (mine area, creek reaches, reservoir)"),
+    "ORSFN1002155": (18.6, "Portland Harbor, 18.2 km2 with the ODEQ source-control basin dropped: EPA's "
+                           "2017 ROD in-water area plus the upland cleanup properties EPA filed with it"),
+    "WAD980978753": (9.0, "Midnite Mine, 8.8 km2: the 2006 ROD's Mining Affected Area, which EPA describes as "
+                          "contaminated by mine-related contaminants, around the mined area"),
+    "WAD988466355": (50.5, "Moses Lake Wellfield, 49.9 km2: EPA's groundwater institutional control boundary, "
+                           "already the shape in the live release; the 12 source areas lie inside it"),
+}
 
 
 class InputCheckError(Exception):
@@ -162,12 +199,31 @@ def check_output(out, min_final, max_final):
     return final_count
 
 
+def drop_excluded_features(gdf):
+    """Drop rows whose SITE_FEATURE_NAME marks a non-site area such as a state source-control basin.
+
+    Returns the kept rows and a list of (EPA_ID, _fid, SITE_FEATURE_NAME) for the dropped ones.
+    Raises InputCheckError if that would leave a site with no rows, so it gets a human look.
+    """
+    names = gdf["SITE_FEATURE_NAME"].map(blank_to_none) if "SITE_FEATURE_NAME" in gdf.columns \
+        else pd.Series([None] * len(gdf), index=gdf.index)
+    lowered = names.map(lambda n: n.lower() if n else "")
+    excluded = lowered.map(lambda n: any(pattern in n for pattern in EXCLUDED_FEATURE_NAME_PATTERNS))
+    dropped = [(row.EPA_ID, int(row._fid), names[idx]) for idx, row in gdf[excluded].iterrows()]
+    kept = gdf[~excluded]
+    emptied = sorted(set(gdf["EPA_ID"]) - set(kept["EPA_ID"]))
+    if emptied:
+        raise InputCheckError(f"excluded features would remove every polygon of {', '.join(emptied)}")
+    return kept, dropped
+
+
 def deduplicate(gdf):
     """Return one row per EPA_ID: union of the top-priority polygons plus deterministic attributes.
 
     Expects columns EPA_ID, SITE_FEATURE_TYPE, the OUTPUT_COLUMNS, LAST_CHANGE_DATE (optional),
     _fid (stable source feature id) and geometry. Also returns the ids whose winning group had
-    more than one polygon, and the ids whose geometry needed repair.
+    more than one polygon, the ids whose geometry needed repair, and for each tied id the list of
+    (_fid, SITE_FEATURE_NAME, MultiPolygon) pieces that were unioned.
     """
     work = gdf.copy()
     work["_priority"] = work["SITE_FEATURE_TYPE"].map(priority_rank)
@@ -191,11 +247,15 @@ def deduplicate(gdf):
     rows = []
     tied_ids = []
     repaired_ids = []
+    tied_pieces = {}
     for epa_id, group in work.groupby("EPA_ID", sort=True):
         first = group.iloc[0]
         if len(group) > 1:
             tied_ids.append(epa_id)
             parts = [to_multipolygon(g) for g in group.geometry]
+            names = group["SITE_FEATURE_NAME"] if "SITE_FEATURE_NAME" in group.columns else [None] * len(group)
+            tied_pieces[epa_id] = [(int(fid), blank_to_none(name), part)
+                                   for fid, name, part in zip(group["_fid"], names, parts) if part is not None]
             geom = to_multipolygon(unary_union([p for p in parts if p is not None]))
         else:
             source = first.geometry
@@ -209,10 +269,43 @@ def deduplicate(gdf):
         rows.append(row)
 
     out = gpd.GeoDataFrame(rows, columns=OUTPUT_COLUMNS + ["geometry"], geometry="geometry", crs=gdf.crs)
-    return out, tied_ids, repaired_ids
+    return out, tied_ids, repaired_ids, tied_pieces
 
 
-def convert(gdb_path, output_path, min_final, max_final, max_null_rate):
+def check_unions(tied_pieces, crs, reviewed, min_added_km2):
+    """Raise InputCheckError when a tied union is dominated by one piece and has not been reviewed.
+
+    A piece is flagged when it adds more than min_added_km2 to the union of the other pieces and
+    grows that union by more than UNION_REVIEW_MIN_RATIO. A flagged site passes only if it is in
+    reviewed and its union is no larger than the reviewed area. Returns the per-site report lines.
+    """
+    report = []
+    problems = []
+    for epa_id, pieces in sorted(tied_pieces.items()):
+        projected = gpd.GeoSeries([p for _, _, p in pieces], crs=crs).to_crs(AREA_CRS).tolist()
+        union_km2 = unary_union(projected).area / 1e6
+        worst = None
+        for i, (fid, name, _) in enumerate(pieces):
+            rest_km2 = unary_union(projected[:i] + projected[i + 1:]).area / 1e6
+            added = union_km2 - rest_km2
+            ratio = union_km2 / rest_km2 if rest_km2 > 0 else float("inf")
+            if added > min_added_km2 and ratio > UNION_REVIEW_MIN_RATIO and (worst is None or added > worst[0]):
+                worst = (added, ratio, fid, name)
+        if worst is None:
+            continue
+        line = (f"{epa_id} union {union_km2:.3f} km2, piece fid {worst[2]} {worst[3]!r} adds "
+                f"{worst[0]:.3f} km2 ({worst[1]:.1f}x the other pieces)")
+        report.append(line)
+        if epa_id not in reviewed:
+            problems.append(f"unreviewed oversized union: {line}")
+        elif union_km2 > reviewed[epa_id][0]:
+            problems.append(f"union grew past its reviewed {reviewed[epa_id][0]} km2: {line}")
+    if problems:
+        raise InputCheckError("; ".join(problems))
+    return report
+
+
+def convert(gdb_path, output_path, min_final, max_final, max_null_rate, union_review_km2):
     print(f"Reading {gdb_path} layer={LAYER} ...")
     gdf = gpd.read_file(gdb_path, layer=LAYER, engine="pyogrio", fid_as_index=True)
     print(f"  Total features: {len(gdf)}")
@@ -239,12 +332,19 @@ def convert(gdb_path, output_path, min_final, max_final, max_null_rate):
     if dropped:
         print(f"  Dropped {dropped} rows with null EPA_ID or geometry")
 
-    out, tied_ids, repaired_ids = deduplicate(gdf)
+    gdf, dropped = drop_excluded_features(gdf)
+    print(f"  Dropped {len(dropped)} source-control rows"
+          + "".join(f"\n    {epa_id} fid {fid} {name!r}" for epa_id, fid, name in dropped))
+
+    out, tied_ids, repaired_ids, tied_pieces = deduplicate(gdf)
     print(f"  Unique sites after deduplication: {len(out)}")
     print(f"  Sites with tied top-priority polygons (unioned): {len(tied_ids)}"
           + (f" {', '.join(tied_ids)}" if tied_ids else ""))
     print(f"  Sites with repaired invalid geometry: {len(repaired_ids)}"
           + (f" {', '.join(repaired_ids)}" if repaired_ids else ""))
+
+    report = check_unions(tied_pieces, gdf.crs, REVIEWED_UNIONS, union_review_km2)
+    print(f"  Reviewed oversized unions: {len(report)}" + "".join(f"\n    {line}" for line in report))
 
     # Report the Final NPL count. All statuses are written to the output;
     # the app decides which sites are active at query time, not here.
@@ -283,7 +383,8 @@ def self_test():
                    "LAST_CHANGE_DATE", "_fid"], r[:7]), URL_ALIAS_TXT=None, geometry=r[7]) for r in rows],
         geometry="geometry", crs="EPSG:4326")
 
-    out, tied, repaired = deduplicate(frame)
+    out, tied, repaired, pieces = deduplicate(frame)
+    assert sorted(fid for fid, _, _ in pieces["A1"]) == [10, 11], pieces["A1"]
     by_id = {row.EPA_ID: row for row in out.itertuples()}
     assert sorted(by_id) == ["A1", "B2", "C3"], by_id.keys()
     assert tied == ["A1", "C3"], tied
@@ -295,7 +396,7 @@ def self_test():
     assert by_id["C3"].NPL_STATUS_CODE == "F" and by_id["C3"].STATE_CODE == "AK"
 
     # Determinism: shuffled input order gives the same output.
-    shuffled, _, _ = deduplicate(frame.iloc[[5, 2, 0, 4, 3, 1]])
+    shuffled, _, _, _ = deduplicate(frame.iloc[[5, 2, 0, 4, 3, 1]])
     assert shuffled.to_json() == out.to_json()
 
     # Input gates.
@@ -310,6 +411,35 @@ def self_test():
         raise AssertionError("3 Final sites should fail the Final count band")
     except InputCheckError:
         pass
+    # Source-control basins are dropped before ranking, by SITE_FEATURE_NAME.
+    named = frame.copy()
+    named["SITE_FEATURE_NAME"] = ["A east", "A west", "A other", "B", None, "C"]
+    basin = gpd.GeoDataFrame([dict(EPA_ID="A1", SITE_FEATURE_TYPE="Comprehensive Site Area", SITE_NAME="Site A",
+                                   STATE_CODE="WA", NPL_STATUS_CODE="F", LAST_CHANGE_DATE="2023-01-01", _fid=13,
+                                   URL_ALIAS_TXT=None, SITE_FEATURE_NAME="LDW Uplands Source Control Area",
+                                   geometry=square(-20, -20, 40))], geometry="geometry", crs="EPSG:4326")
+    kept, dropped = drop_excluded_features(pd.concat([named, basin], ignore_index=True))
+    assert dropped == [("A1", 13, "LDW Uplands Source Control Area")], dropped
+    kept_out, _, _, _ = deduplicate(kept)
+    assert abs(kept_out.set_index("EPA_ID").loc["A1"].geometry.area - 2.0) < 1e-9
+    try:
+        drop_excluded_features(basin)
+        raise AssertionError("a site with only source-control rows should fail")
+    except InputCheckError:
+        pass
+
+    # Union review gate, with pieces about 1.2 km2 (0.01 degree) and 31 km2 (0.05 degree) at the equator.
+    small, big = MultiPolygon([square(0, 0, 0.01)]), MultiPolygon([square(0.01, 0, 0.05)])
+    even = {"E5": [(1, "east", small), (2, "west", MultiPolygon([square(0.01, 0, 0.01)]))]}
+    assert check_unions(even, "EPSG:4326", {}, DEFAULT_UNION_REVIEW_KM2) == []
+    lopsided = {"D4": [(1, "site", small), (2, "basin", big)]}
+    for reviewed in ({}, {"D4": (10.0, "too small")}):
+        try:
+            check_unions(lopsided, "EPSG:4326", reviewed, DEFAULT_UNION_REVIEW_KM2)
+            raise AssertionError(f"lopsided union should fail with reviewed={reviewed}")
+        except InputCheckError:
+            pass
+    assert len(check_unions(lopsided, "EPSG:4326", {"D4": (40.0, "ok")}, DEFAULT_UNION_REVIEW_KM2)) == 1
     print("Self-test passed.")
 
 
@@ -321,6 +451,8 @@ def main():
     parser.add_argument("--max-final", type=int, default=DEFAULT_MAX_FINAL, help="Maximum expected Final site count")
     parser.add_argument("--max-null-rate", type=float, default=DEFAULT_MAX_NULL_RATE,
                         help="Maximum share of raw rows with a null/blank EPA_ID, NPL_STATUS_CODE or STATE_CODE")
+    parser.add_argument("--union-review-km2", type=float, default=DEFAULT_UNION_REVIEW_KM2,
+                        help="Flag a tied union when one piece adds more than this many km2 (see REVIEWED_UNIONS)")
     parser.add_argument("--self-test", action="store_true", help="Run the built-in checks and exit")
     args = parser.parse_args()
 
@@ -329,7 +461,8 @@ def main():
         return
 
     try:
-        convert(resolve_gdb_path(args.gdb), args.output, args.min_final, args.max_final, args.max_null_rate)
+        convert(resolve_gdb_path(args.gdb), args.output, args.min_final, args.max_final, args.max_null_rate,
+                args.union_review_km2)
     except InputCheckError as error:
         print(f"ERROR: input check failed, nothing written: {error}", file=sys.stderr)
         sys.exit(2)
