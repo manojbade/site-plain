@@ -11,7 +11,7 @@ Last verified: July 12, 2026 (NPL boundaries refreshed to EPA 2026-07-11 release
 | # | Dataset | Upstream | Format | Refresh | Loader | Table(s) |
 |---|---------|----------|--------|---------|--------|----------|
 | [01](sources/01-epa-npl-boundaries.md) | NPL Superfund site boundaries | EPA EDG (`NPL_Boundaries.zip`), via GitHub release | GeoJSON (converted from GDB) | Manual, when EPA layer changes | `NplBoundaryLoader` | `npl_site_boundaries` |
-| [02](sources/02-epa-human-exposure.md) | Human exposure status | EPA SEMS (`Human_Exposure_Site_List.json`) | JSON | Automatic, every startup | `HumanExposureLoader` | `npl_human_exposure` |
+| [02](sources/02-epa-human-exposure.md) | Human exposure status | EPA SEMS (`Human_Exposure_Site_List.json`) | JSON | Checked every startup, swapped in when the file changed | `HumanExposureLoader` | `npl_human_exposure` |
 | [03](sources/03-census-geocoder.md) | Address to lat/lon | US Census Bureau geocoder | REST API | Live per request, no load | `GeocodingService` | none |
 | [04](sources/04-nominatim-geocoder.md) | Address to lat/lon (fallback) | OpenStreetMap Nominatim | REST API | Live per request, no load | `GeocodingService` | none |
 
@@ -21,32 +21,42 @@ Derived tables rebuilt on every startup: `site_seo_page_cache`, `state_page_cach
 
 ## How Loading Works
 
-`DataBootstrapService` runs once at startup (`ApplicationRunner`). It does two things in order:
+`DataBootstrapService` runs once at startup (`ApplicationRunner`), holding a Postgres advisory lock (`DataRefreshLock`) so two instances (Railway runs the new deploy while the old one still serves) never refresh at once; an instance that cannot take the lock skips and serves the data already live.
 
-1. **Boundaries** (`refreshBoundariesIfNeeded`): reloads `npl_site_boundaries` only when the refresh policy says so (see below). Reads the GeoJSON from `SITEPLAIN_DATA_NPL_BOUNDARIES_URL`, loads into a staging table, validates, then swaps into live.
-2. **Human exposure + caches** (`refreshHumanExposureAndCaches`): always runs. Reloads `npl_human_exposure` fresh from EPA, then rebuilds `site_seo_page_cache`, `state_page_cache`, and the sitemap.
+1. **Stage and validate.** Boundaries are downloaded and loaded into `npl_site_boundaries_staging` only when the refresh policy says so (see below). The exposure feed is downloaded every time; when its SHA-256 matches the live feed it is not staged again. Each download (`SourceDownloader`) streams to a temp file with a timeout, a size cap and a JSON sniff, and each loader streams the file one record at a time and checks its content (see the source docs).
+2. **Swap in one transaction.** Boundaries (if reloaded), exposure (if changed), `site_seo_page_cache` and `state_page_cache` are replaced together with `DELETE` plus `INSERT ... SELECT`, so readers see the old rows until commit and never an empty or half-built table. At startup the two caches are rebuilt even when no source changed. The source identity rows in `data_source_state` are written in the same transaction.
+3. **After commit:** `ANALYZE` the replaced tables, empty both staging tables, rebuild the in-memory sitemap.
 
-Railway containers are ephemeral. Nothing on the container filesystem persists across deploys; the Postgres database is what persists. Human exposure reloads on every deploy because it is cheap and EPA updates it continuously. Boundaries reload only when triggered.
+Railway containers are ephemeral. Nothing on the container filesystem persists across deploys; the Postgres database is what persists.
 
 ### Refresh policy (`DataRefreshPolicyService`)
 
-Boundaries reload if ANY of these is true:
+Boundaries reload only when ONE of these is true:
 
 - The `npl_site_boundaries` table is empty (first boot), OR
 - `SITEPLAIN_DATA_REFRESH_ON_STARTUP=true`, OR
-- The last load is older than `SITEPLAIN_DATA_MAX_AGE_DAYS` (default 90).
+- `SITEPLAIN_DATA_NPL_BOUNDARIES_URL` differs from the `source_url` recorded for the live boundaries in `data_source_state`.
 
-Note the 90-day trigger: unlike some sibling projects, this app still auto-reloads boundaries after 90 days. If you only want to change the source URL, that auto-trigger may fire on its own, so always keep `SITEPLAIN_DATA_NPL_BOUNDARIES_URL` pointing at a valid current release.
+There is no age trigger: `SITEPLAIN_DATA_MAX_AGE_DAYS` is ignored (a warning is logged when it is set). When boundaries are live but `data_source_state` has no boundary row (the first boot after migration V7), the configured URL is adopted as their source without reloading (`last_status = ADOPTED`, no SHA-256 until the next real load).
+
+```sql
+-- What is live, and how the last refresh attempt went.
+SELECT dataset, source_url, sha256, bytes, last_modified, row_count, final_count,
+       loaded_at, last_checked_at, last_status, last_error
+FROM data_source_state;
+```
 
 ### Railway variables that control loading
 
 | Variable | Steady-state value | Purpose |
 |---|---|---|
 | `SITEPLAIN_DATA_BOOTSTRAP_ENABLED` | `true` | Master switch. `false` skips all loading (human exposure included). Leave `true`. |
-| `SITEPLAIN_DATA_REFRESH_ON_STARTUP` | `false` | Flip to `true` for exactly one deploy to force a boundary reload. |
-| `SITEPLAIN_DATA_MAX_AGE_DAYS` | `90` | Age after which boundaries auto-reload. |
-| `SITEPLAIN_DATA_NPL_BOUNDARIES_URL` | GitHub release asset URL | Where the boundary GeoJSON is fetched from. |
+| `SITEPLAIN_DATA_REFRESH_ON_STARTUP` | `false` | `true` reloads boundaries on every boot. Only needed to re-download the same URL. |
+| `SITEPLAIN_DATA_MAX_AGE_DAYS` | unset | Ignored (the age trigger is retired). Safe to delete. |
+| `SITEPLAIN_DATA_NPL_BOUNDARIES_URL` | GitHub release asset URL | Where the boundary GeoJSON is fetched from. Changing it triggers one reload. |
 | `SITEPLAIN_DATA_HUMAN_EXPOSURE_URL` | EPA SEMS JSON URL | Live human exposure feed. |
+| `SITEPLAIN_DATA_BOUNDARIES_DOWNLOAD_TIMEOUT` / `_MAX_SIZE` | `300s` / `240MB` | Whole-download limit and size cap for the boundary file. |
+| `SITEPLAIN_DATA_HUMAN_EXPOSURE_DOWNLOAD_TIMEOUT` / `_MAX_SIZE` | `60s` / `6MB` | Same for the exposure feed. |
 
 ---
 
@@ -76,22 +86,17 @@ EPA refreshes the hosted feature service weekly, but the actual set of NPL sites
    gh release create data-YYYY-MM-DD scripts/npl_site_boundaries.geojson \
      --repo manojbade/site-plain --title "NPL boundary data YYYY-MM-DD" --notes "..."
    ```
-5. Point Railway at the new asset and force one reload:
+5. Point Railway at the new asset. The changed URL alone triggers one reload on the next boot:
    ```bash
    railway variables --set SITEPLAIN_DATA_NPL_BOUNDARIES_URL=<new asset URL> --skip-deploys
-   railway variables --set SITEPLAIN_DATA_REFRESH_ON_STARTUP=true --skip-deploys
    ```
 6. Build and deploy:
    ```bash
    mvn clean package -DskipTests
    railway up
    ```
-7. Watch logs for `NPL boundaries loaded into staging: N rows` and `Bootstrap complete. Sites: X, Exposure records: Y, ...`.
-8. Reset the one-shot flag so future restarts do not re-download:
-   ```bash
-   railway variables --set SITEPLAIN_DATA_REFRESH_ON_STARTUP=false --skip-deploys
-   ```
-9. Run the verification queries below and the live-site checks.
+7. Watch logs for `NPL boundaries: RELOAD (SITEPLAIN_DATA_NPL_BOUNDARIES_URL changed from ...)`, `NPL boundaries loaded into staging: N rows, M Final` and `Data refresh done in a ... ms swap. Boundaries reloaded ...`. A rejected or unreachable file logs `NPL boundary file refresh failed; keeping the live data: <reason>` and the old boundaries stay live.
+8. Run the verification queries below and the live-site checks. `data_source_state` should show the new URL and its SHA-256 with `last_status = LOADED`.
 
 The GeoJSON is gitignored (`scripts/npl_site_boundaries.geojson`); the GitHub release is the source of truth for prod, not the repo.
 
@@ -107,7 +112,7 @@ SELECT count(*), count(*) FILTER (WHERE NOT has_boundary) FROM active_npl_sites;
 
 SELECT npl_status_code, count(*) FROM npl_site_boundaries GROUP BY 1 ORDER BY 2 DESC;
 
--- Human exposure reloads every deploy (every feed row, ~1,905); must be well over 1,500, with ~1,337 F rows, or bootstrap aborts.
+-- Every feed row (~1,905); the feed is rejected with 1,500 or fewer rows or an F count outside 1,200..1,450.
 SELECT count(*) FROM npl_human_exposure;
 SELECT humexposurestscode, count(*) FROM npl_human_exposure GROUP BY 1 ORDER BY 2 DESC;
 
@@ -135,20 +140,18 @@ curl -s "https://site-plain.com/actuator/health"                                
 
 ## Failure Behavior
 
-- **Boundary reload on a populated table:** if the download yields zero rows, or fewer than 90% of the current live count, the load aborts with an exception and the swap does not happen. The previous data stays live. Check deploy logs.
-- **Human exposure reload:** if the feed returns 1,500 or fewer rows, has an unknown `nplstatus` value, has an `F` count outside 1,200..1,450, or would drop the active site count by more than 5%, bootstrap throws before the swap. On a first boot (empty DB) this aborts startup; the app will not come up with no data.
-- **Boundaries are never touched by a routine deploy** unless the refresh policy triggers (flag set, table empty, or older than `MAX_AGE_DAYS`).
-- **A boundary reload against a dead URL fails startup, not just the refresh.** When the policy triggers a reload and `SITEPLAIN_DATA_NPL_BOUNDARIES_URL` 404s or is unreachable, `NplBoundaryLoader` throws and `DataBootstrapService` propagates it, so the container fails to boot. The dangerous case is silent: with `MAX_AGE_DAYS=90` and `REFRESH_ON_STARTUP=false`, everything looks fine for 90 days, then the next restart past that age tries to reload and takes the site down if the release URL has since been deleted or renamed. Keep the URL valid for as long as it is referenced, or delete old releases only after pointing the var at a new one.
-
----
+- **Nothing live changes until one transaction commits.** All downloads, staging loads and checks run first. If any of them fails, or the swap transaction itself fails, the previous boundaries, exposure rows and page caches stay live.
+- **With live data, a failed source never stops the app.** A failed download (timeout, non-2xx, HTML page, empty or oversized body) or a rejected file is logged at ERROR with the reason, recorded in `data_source_state` (`last_status = FAILED`, `last_error`; the identity columns still describe the live data), and the app starts on the existing data. The other source still goes ahead if it passed, and at startup the page caches and sitemap are still rebuilt. A boundary URL that keeps failing is retried on every boot until it loads or is changed back.
+- **Only an empty database aborts startup.** On a first boot with no boundaries, any failure throws from the runner and nothing is swapped.
+- **Boundaries are never touched by a routine deploy** unless the URL changed, the table is empty, or `SITEPLAIN_DATA_REFRESH_ON_STARTUP=true`.
+- **`SITEPLAIN_DATA_BOOTSTRAP_ENABLED=false`** skips every download and serves what is in the database; the sitemap is still built from the caches.
 
 ## Fragile Points
 
 | Risk | Mitigation |
 |------|-----------|
 | EPA renames the GDB layer (currently `SITE_BOUNDARIES_SF`) | `convert_npl_to_geojson.py` fails at read. Update `LAYER` in the script. Confirm with `python3 -c "import pyogrio; print(pyogrio.list_layers('.../NPL_Boundaries.gdb'))"`. |
-| EPA changes human exposure JSON field names | `HumanExposureLoader` silently loads fewer rows; the >1,500 and `nplstatus` guards catch a total failure or a broken `nplstatus`, but not a partial loss of other fields. Check `humexposurestscode` distribution after a deploy. |
+| EPA changes human exposure JSON field names | The feed is rejected when `epaid`, `nplstatus`, `sitename` or a usable state is missing on more than 0.5% of rows, or `humexposurestscode` on more than 2%, and the live feed stays. New `humexposurestscode` values are only logged at WARN. |
 | data.gov dataset slug changes | The dataset moved from `npl-superfund-site-boundaries-epa10` to `npl-superfund-site-boundaries-epa`. Find the current GDB link under the "Zipped File Geodatabase" resource. |
 | GitHub release URL changes | Update `SITEPLAIN_DATA_NPL_BOUNDARIES_URL` in Railway. |
 | PostGIS missing on a fresh Railway Postgres | `CREATE EXTENSION IF NOT EXISTS postgis` is in V1; the DB image must support PostGIS. |
-| 90-day auto-reload fires unexpectedly | It reloads from whatever `SITEPLAIN_DATA_NPL_BOUNDARIES_URL` points at, so keep that URL valid at all times. |

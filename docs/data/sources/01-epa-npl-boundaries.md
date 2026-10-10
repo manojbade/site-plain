@@ -46,17 +46,16 @@ The conversion script and the loader keep **all** statuses (~1,908 rows: F, D, N
 
 ## Load mechanics
 
-`NplBoundaryLoader.loadIntoStaging(url)`:
+`SourceDownloader` fetches `SITEPLAIN_DATA_NPL_BOUNDARIES_URL` to a temp file (redirects followed; 300 s whole-download timeout and 240 MB cap by default; non-2xx, `text/html`, empty or non-JSON bodies rejected) and computes its SHA-256.
+
+`NplBoundaryLoader.loadIntoStaging(file)`:
 1. Truncates `npl_site_boundaries_staging`.
-2. Streams the GeoJSON `features`, upserting each into staging. Rows with null `EPA_ID` or null geometry are skipped. Geometry goes in as `ST_SetSRID(ST_GeomFromGeoJSON(...), 4326)`.
-3. Returns the row count.
+2. Streams the GeoJSON with a `JsonParser`, one feature at a time; each geometry is copied from the parser as text, never built as a tree (a full reload fits in a 128 MB heap). Each feature is inserted into staging with a plain `INSERT` as `ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON(...), 4326))`, so a Polygon is stored as a MultiPolygon.
+3. Records what it saw. `DataBootstrapService` rejects the file, and keeps the live boundaries, when: the top-level type is not `FeatureCollection`; `crs` is not CRS84 or EPSG:4326; `EPA_ID`, `SITE_NAME`, `STATE_CODE` or `NPL_STATUS_CODE` is missing on more than 0.5% of features; an `EPA_ID` repeats; a geometry is not a Polygon or MultiPolygon with numeric positions nested correctly; a coordinate is outside longitude -180..180 or latitude -90..90; the Final count is outside 1,200..1,450 or a Final feature has no state (the converter's gates); fewer than 90% of the live rows were staged; or the active site count would drop more than 5%. The rejection message lists every failed check with counts and up to five example IDs.
 
-Then `DataBootstrapService` validates and swaps:
-- Abort if staging count is 0.
-- Abort if the table already had data and staging is below 90% of the live count.
-- `NplBoundaryRepository.swapStagingToLive()` runs `TRUNCATE site_seo_page_cache, state_page_cache, npl_human_exposure, npl_site_boundaries` then `INSERT ... SELECT` from staging, in a transaction. The dependent tables no longer carry FKs to `npl_site_boundaries(epa_id)` (dropped in V5); they are still truncated here and rebuilt by the exposure reload that follows.
+The swap (`NplBoundaryRepository.replaceLiveFromStaging`) runs inside the single refresh transaction together with the exposure swap and both page cache rebuilds: `DELETE FROM npl_site_boundaries` then `INSERT ... SELECT` from staging. Readers keep the old rows until commit. After commit the table is analyzed and staging is emptied. The source URL, SHA-256, size and Last-Modified are recorded in `data_source_state` (V7).
 
-The GIST index `idx_npl_boundaries_geom` is defined in migration V1 and persists across the swap (the table is truncated, not dropped).
+The GIST indexes (`idx_npl_boundaries_geom` from V1, `idx_npl_boundaries_geog` from V6) persist across the swap.
 
 A valid Final-site spot-check ID is `GAD990855074` (Firestone Tire & Rubber Co., Albany Plant, GA). Do not reuse older notes' `GA8213820731`; that ID is not present in the EPA data.
 

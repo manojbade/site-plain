@@ -7,21 +7,23 @@ The user-facing status signal. For each Superfund site, EPA reports whether huma
 - URL: `https://www3.epa.gov/semsjson/Human_Exposure_Site_List.json` (~1.3 MB)
 - Configured via `SITEPLAIN_DATA_HUMAN_EXPOSURE_URL` (this is also the built-in default)
 - Cadence: continuous. EPA updates exposure assessments as cleanups progress, so this feed changes far more often than the boundaries.
-- No credentials, no archiving. It is small and reloads every deploy.
+- No credentials, no archiving. It is small and is downloaded on every deploy; it is swapped in only when its SHA-256 differs from the live feed's.
 
 ## Load mechanics
 
-`HumanExposureLoader.loadIntoStaging(url)`:
+`SourceDownloader` fetches the feed to a temp file (60 s whole-download timeout and 6 MB cap by default; non-2xx, `text/html`, empty or non-JSON bodies rejected), records its SHA-256 and `Last-Modified`, and the refresh stops here, keeping the live rows, when the SHA-256 and URL match the live feed in `data_source_state`.
+
+`HumanExposureLoader.loadIntoStaging(file)`:
 1. Truncates `npl_human_exposure_staging`.
-2. Reads the JSON `data` array (an `http(s)://` or `file://` URL). For each row, uppercases `epaid` and skips rows with no `epaid`.
-3. Upserts **every** row into staging, including sites that have no boundary in `npl_site_boundaries` (for example Final sites EPA has not published a polygon for, such as WA2170023418 Puget Sound Naval Shipyard).
+2. Streams the JSON `data` array one row at a time. For each row, uppercases `epaid` and skips rows with no `epaid`.
+3. Inserts **every** other row into staging, including sites that have no boundary in `npl_site_boundaries` (for example Final sites EPA has not published a polygon for, such as WA2170023418 Puget Sound Naval Shipyard).
 
 Fields read: `epaid`, `humexposurestscode`, `humanexposurepathdesc`, `nplstatus`, `sitename`, `state_code`, `friendlyurl`. Join key is `epaid` (JSON, lowercase) to `EPA_ID` (boundaries, uppercase), both normalized to uppercase.
 
 - `state_code` is kept when it is a known state or territory code (`StateNames`). Otherwise the first two letters of the EPA ID are used if they are a known code, else the state is left null. On the 2026-10-10 feed every row has a valid `state_code`.
 - `friendlyurl` has no scheme in the feed (`www.epa.gov/superfund/...`), so `https://` is added. A scheme-less URL on another host is dropped, and the page falls back to the EPA search link.
 
-Guards: `DataBootstrapService` throws, before the swap, if the feed yields 1,500 or fewer rows with an `epaid` (1,905 on 2026-10-10), if any non-null `nplstatus` is outside `F, D, P, N, R, S`, if the `F` row count is outside 1,200..1,450 (1,337 on 2026-10-10), or if the active site count would drop more than 5% below the current one. Because `nplstatus` decides which sites are active, a vocabulary change such as `Final` for `F` would otherwise empty the site.
+Guards: before the swap, the feed is rejected (and the live rows kept) when it says `success: false`; `meta.total_data` differs from the number of rows; `epaid`, `nplstatus`, `sitename` or a usable state is missing on more than 0.5% of rows, or `humexposurestscode` on more than 2% (3 of 1,905 on 2026-10-10); an `epaid` repeats; it has 1,500 or fewer rows with an `epaid` (1,905 on 2026-10-10); any non-null `nplstatus` is outside `F, D, P, N, R, S`; the `F` row count is outside 1,200..1,450 (1,337 on 2026-10-10); or the active site count would drop more than 5% below the current one. Because `nplstatus` decides which sites are active, a vocabulary change such as `Final` for `F` would otherwise empty the site. A `humexposurestscode` with no label is logged at WARN, not rejected. The swap itself runs in the single refresh transaction (see the [README](../README.md#how-loading-works)).
 
 ## Active sites
 
@@ -41,7 +43,7 @@ Active sites with no boundary (`has_boundary = false`, 15 on 2026-10-10) get a `
 | HEIC | No EPA definition found; shown as insufficient data | Insufficient data | Gray |
 | null / missing / no record | Not reported | Not reported | Gray |
 
-HEIC appears in the feed (2 rows on 2026-10-10, both non-Final sites) but EPA's published definitions do not cover it, so it is shown as insufficient data rather than as a raw code. Each site page, results page and results PDF shows "EPA exposure status as of <date>", the date the feed in use was loaded (max `loaded_at` of `npl_human_exposure`).
+HEIC appears in the feed (2 rows on 2026-10-10, both non-Final sites) but EPA's published definitions do not cover it, so it is shown as insufficient data rather than as a raw code. Each site page, results page and results PDF shows "EPA exposure status as of <date>": the HTTP `Last-Modified` date (UTC) of the live feed as recorded in `data_source_state`, or, when none was recorded, the date the live rows were loaded (max `loaded_at` of `npl_human_exposure`).
 
 The exact mapping lives in `ExposureStatusMapper`. Red/yellow/green reflects EPA's exposure-control assessment, not whether a site is actively dangerous. Sites with a Final boundary but no exposure record render Gray ("Not reported").
 
@@ -50,13 +52,12 @@ The exact mapping lives in `ExposureStatusMapper`. Red/yellow/green reflects EPA
 | Table | Purpose |
 |-------|---------|
 | `npl_human_exposure` | Live records, one per feed site. No FK to `npl_site_boundaries` since V5, so sites without a boundary can be stored |
-| `npl_human_exposure_staging` | Staging, verified before swap |
+| `npl_human_exposure_staging` | Staging, validated before the swap and emptied after it |
 
 ## Refresh
 
-None. This reloads automatically on every deploy as part of `refreshHumanExposureAndCaches`, which also rebuilds `site_seo_page_cache`, `state_page_cache`, and the sitemap. To pick up the latest exposure status, just redeploy.
+None. The feed is checked on every deploy and swapped in when it changed; `site_seo_page_cache`, `state_page_cache` and the sitemap are rebuilt on every startup. To pick up the latest exposure status, redeploy (or restart). If EPA is down or the feed is rejected, the app starts on the live rows and `data_source_state.last_error` says why.
 
 ## Quirks
 
-- Exposure rows no longer depend on the boundary set, but a boundary reload still truncates `npl_human_exposure`; the reload that follows in the same bootstrap restores it.
-- A partial upstream schema change (one renamed field other than `nplstatus`) would not trip the guards. After a deploy, sanity-check the `humexposurestscode` distribution if anything looks off.
+- A renamed `humanexposurepathdesc` or `friendlyurl` would not trip the guards (both are optional). After a deploy, sanity-check the `humexposurestscode` distribution if anything looks off.
