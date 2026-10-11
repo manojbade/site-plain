@@ -29,7 +29,7 @@
           <div class="tt-report-meta">
             <ul class="tt-meta-list">
               <li th:if="${viewModel.stateCode != null}" th:text="${viewModel.stateCode}">MA</li>
-              <li>Distance to the EPA site boundary</li>
+              <li th:if="${viewModel.hasSites}">Distances are to the EPA site boundary</li>
               <li th:if="${viewModel.exposureStatusAsOf != null}"
                   th:text="'EPA exposure status as of ' + ${viewModel.exposureStatusAsOf}">EPA exposure status as of October 10, 2026</li>
             </ul>
@@ -82,8 +82,12 @@
       <div class="mt-3" th:insert="~{fragments/disclaimer :: disclaimer}"></div>
     </section>
 
-    <div class="row g-4 g-xl-5">
-      <div class="col-xl-8">
+    <!--/* One grid: site list, side column, feedback form. Phones (and anything under 1200px) stack them in that
+         order, so the list comes before the map and sources, and the form comes last. From 1200px the side
+         column spans both rows on the right, so the form follows the site list directly instead of waiting
+         below the taller side column, and it shares the list's gutters. */-->
+    <div class="row g-4 g-xl-5 sp-report-layout">
+      <div class="col-xl-8 sp-report-main">
         <section class="tt-report-section" th:if="${viewModel.hasSites}">
           <div class="tt-report-section-header">
             <h2 class="tt-report-section-title">Sites by distance</h2>
@@ -141,7 +145,7 @@
       </div>
 
       <!--/* Side column: below the site list under 1200px, so phones read the list before the map. */-->
-      <div class="col-xl-4 align-self-start">
+      <div class="col-xl-4 align-self-start sp-report-side">
         <div class="tt-side-stack">
           <!--/* No role on the map element: Mapbox renders a focusable canvas and attribution links inside it,
                and they must stay exposed to screen readers. The figcaption and the site list carry the meaning. */-->
@@ -164,11 +168,9 @@
           </aside>
         </div>
       </div>
-    </div>
 
-    <!--/* After both columns, so on phones the map and sources come before the form. */-->
-    <div class="row">
-      <div class="col-xl-8">
+      <!--/* After the side column in the markup, so on phones the map and sources come before the form. */-->
+      <div class="col-xl-8 sp-report-feedback">
         <div th:replace="~{fragments/feedback-form :: feedback-form('results', null)}"></div>
       </div>
     </div>

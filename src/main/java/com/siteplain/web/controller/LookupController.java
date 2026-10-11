@@ -103,7 +103,7 @@ public class LookupController {
         if (bindingResult.hasErrors()) {
             // Blank or over 200 characters: the form again, with the field error, as a 400.
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
-            model.addAttribute("viewModel", HomeController.buildHomePageViewModel(nplBoundaryRepository));
+            model.addAttribute("viewModel", HomeController.buildHomePageViewModel(nplBoundaryRepository, humanExposureRepository));
             return "index";
         }
         String typed = form.getAddress().trim();

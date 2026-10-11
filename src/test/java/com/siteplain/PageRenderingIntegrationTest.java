@@ -417,6 +417,76 @@ class PageRenderingIntegrationTest {
         assertThat(none).contains("No matching site found").contains("Try an address lookup instead");
     }
 
+    @Test
+    void resultsPage_putsTheFeedbackFormInTheReportGridAfterTheSideColumn() throws Exception {
+        String html = page(results(39.825, -84.055, "1 Main St, Dayton, OH", "OH", null), 200);
+        int layout = html.indexOf("<div class=\"row g-4 g-xl-5 sp-report-layout\">");
+        int main = html.indexOf("<div class=\"col-xl-8 sp-report-main\">");
+        int side = html.indexOf("<div class=\"col-xl-4 align-self-start sp-report-side\">");
+        int feedback = html.indexOf("<div class=\"col-xl-8 sp-report-feedback\">");
+        int form = html.indexOf("id=\"feedback\"");
+        // One grid with the report's gutters, in phone order: list, side column (map, sources), form.
+        assertThat(layout).isPositive();
+        assertThat(main).isGreaterThan(layout).isLessThan(side);
+        assertThat(side).isLessThan(feedback);
+        assertThat(feedback).isLessThan(form);
+        assertThat(html.substring(side, form)).doesNotContain("<div class=\"row\">");
+
+        String css = page(get("/css/site-plain.css"), 200);
+        assertThat(css).contains("grid-row: 1 / span 2;").contains(".sp-report-layout > .sp-report-feedback {");
+    }
+
+    @Test
+    void resultsMetaLine_saysDistancesAreToTheBoundaryOnlyWhenThereAreSites() throws Exception {
+        String sites = page(results(39.825, -84.055, "1 Main St, Dayton, OH", "OH", null), 200);
+        assertThat(sites).contains("<li>Distances are to the EPA site boundary</li>")
+                .doesNotContain("Distance to the EPA site boundary");
+
+        String none = page(results(38.5, -116.5, "Somewhere, NV", "NV", null), 200);
+        assertThat(none).doesNotContain("Distances are to the EPA site boundary")
+                .doesNotContain("Distance to the EPA site boundary");
+    }
+
+    @Test
+    void noBoundaryNotice_linksTheEpaProfileItself() throws Exception {
+        String unmapped = page(get("/site/OHR000000002"), 200);
+        int notice = unmapped.indexOf("<span class=\"sp-notice-title\">No published boundary</span>");
+        String noticeHtml = unmapped.substring(notice, unmapped.indexOf("</div>", notice));
+        assertThat(noticeHtml).contains("<a href=\"https://www.epa.gov/superfund/render-test-unmapped\" target=\"_blank\" rel=\"noopener\">View EPA site profile</a>")
+                .doesNotContain("below");
+    }
+
+    @Test
+    void siteSearchWithoutMatch_givesTheAddressLinkATapTarget() throws Exception {
+        String none = page(get("/search/sites").param("q", "zzqx no such site"), 200);
+        assertThat(none).contains("<a class=\"tt-card-link sp-tap-link\" href=\"/\">Try an address lookup instead</a>");
+        assertThat(page(get("/css/site-plain.css"), 200)).containsPattern(
+                "\\.sp-tap-link \\{\\s*align-items: center;\\s*display: inline-flex;\\s*min-height: 2\\.75rem;");
+    }
+
+    @Test
+    void homeAndAbout_linkEachDataSourceWithItsLoadDate() throws Exception {
+        for (String path : List.of("/", "/about")) {
+            String html = page(get(path), 200).replaceAll("\\s+", " ");
+            assertThat(html).as(path)
+                    .containsPattern("<a href=\"https://edg\\.epa\\.gov/metadata/catalog/search/resource/details\\.page\\?uuid=%7BFC07D75C-8596-434B-B1A6-0688C9CD45B5%7D\" "
+                            + "target=\"_blank\" rel=\"noopener\">EPA NPL Superfund Site Boundaries</a><span class=\"tt-source-date\">loaded [A-Z][a-z]+ \\d{1,2}, \\d{4}</span>")
+                    .contains("<a href=\"https://www.epa.gov/superfund/superfund-human-exposure-dashboard\" target=\"_blank\" rel=\"noopener\">"
+                            + "EPA Superfund Human Exposure list</a><span class=\"tt-source-date\">loaded October 10, 2026</span>")
+                    .contains("<a href=\"https://geocoding.geo.census.gov/geocoder/\" target=\"_blank\" rel=\"noopener\">U.S. Census Geocoder</a>")
+                    .contains("<a href=\"https://nominatim.org/\" target=\"_blank\" rel=\"noopener\">OpenStreetMap Nominatim</a>");
+        }
+    }
+
+    @Test
+    void stylesheet_dropsTheTabFocusHaloAlignsSummaryValuesAndTheHomeRule() throws Exception {
+        String css = page(get("/css/site-plain.css"), 200);
+        assertThat(css).containsPattern("\\.tt-segmented \\.nav-link:focus,\\s*\\.tt-segmented \\.nav-link:focus-visible \\{\\s*box-shadow: none;")
+                .containsPattern("\\.tt-kpi-item \\{[^}]*display: flex;\\s*flex-direction: column;")
+                .containsPattern("\\.tt-kpi-strip dd \\{[^}]*margin: auto 0 0;")
+                .contains("min(calc(100% - var(--bs-gutter-x)), 50rem) 2px no-repeat;");
+    }
+
     /** GET /results with an encrypted link, as POST /lookup would have issued it. */
     private MockHttpServletRequestBuilder results(double lat, double lng, String label, String state, String approx) {
         return get("/results").param("r", resultsTokens.encode(

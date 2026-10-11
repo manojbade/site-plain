@@ -178,11 +178,7 @@
         <div class="tt-report-scope-note mb-3">
           <p class="mb-0">Proximity to a Superfund site boundary does not mean your property is contaminated. EPA boundaries show the cleanup area, not the full extent of contamination. Groundwater plumes can extend beyond site boundaries. This tool is not affiliated with or endorsed by EPA.</p>
         </div>
-        <ul class="tt-source-list">
-          <li>EPA National Priorities List</li>
-          <li>EPA Human Exposure Site List</li>
-          <li>U.S. Census Geocoder</li>
-        </ul>
+        <ul th:replace="~{fragments/data-sources :: list(${viewModel.dataSources})}"></ul>
       </section>
     </div>
   </div>

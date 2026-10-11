@@ -28,7 +28,8 @@
 
     <div class="sp-notice mt-3" role="note" th:if="${!site.hasBoundary}">
       <span class="sp-notice-title">No published boundary</span>
-      EPA has not published a boundary for this site, so Site Plain cannot calculate how far an address is from it, and it does not appear in address lookup results. Use the EPA site profile below for its location.
+      EPA has not published a boundary for this site, so Site Plain cannot calculate how far an address is from it, and it does not appear in address lookup results. EPA's site profile shows where it is:
+      <a th:href="${site.effectiveEpaUrl()}" target="_blank" rel="noopener">View EPA site profile</a>
     </div>
 
     <div class="mt-3" th:insert="~{fragments/disclaimer :: disclaimer}"></div>

@@ -126,6 +126,15 @@ public class HumanExposureRepository {
         return rows.stream().filter(Objects::nonNull).findFirst();
     }
 
+    /** When the live exposure rows were loaded (the same clock as the boundaries' load date), or empty with no rows. */
+    public Optional<LocalDate> lastLoadedDate() {
+        List<LocalDate> rows = jdbcTemplate.query("""
+                SELECT max(loaded_at)::date AS loaded_date
+                FROM npl_human_exposure
+                """, (rs, rowNum) -> rs.getObject("loaded_date", LocalDate.class));
+        return rows.stream().filter(Objects::nonNull).findFirst();
+    }
+
     /** Replaces the live rows with staging; only inside the refresh transaction (DELETE, not TRUNCATE). */
     public void replaceLiveFromStaging() {
         jdbcTemplate.update("DELETE FROM npl_human_exposure");

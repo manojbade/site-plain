@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+<!--/* Data sources, each linked to its official page, with Site Plain's last load date where it has one. */-->
+<ul th:fragment="list(sources)" class="tt-source-list sp-data-sources">
+  <li th:each="source : ${sources}">
+    <a th:href="${source.url}" target="_blank" rel="noopener" th:text="${source.label}">EPA NPL Superfund Site Boundaries</a><span
+        class="tt-source-date" th:if="${source.loadedOn != null}" th:text="${source.loadedOn}">loaded October 10, 2026</span>
+    <span class="tt-source-limit" th:if="${source.note != null}" th:text="${source.note}">Note</span>
+  </li>
+</ul>
+</body>
+</html>

@@ -32,9 +32,7 @@
 
         <section id="data-sources">
           <h2 class="tt-section-heading">Data sources</h2>
-          <ul class="tt-source-list">
-            <li th:each="source : ${viewModel.dataSources}" th:text="${source}">Source</li>
-          </ul>
+          <ul th:replace="~{fragments/data-sources :: list(${viewModel.dataSources})}"></ul>
         </section>
 
         <div th:replace="~{fragments/disclaimer :: disclaimer}"></div>

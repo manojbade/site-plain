@@ -351,6 +351,12 @@ button:focus-visible,
   color: #ffffff;
 }
 
+/* Bootstrap adds a blue box-shadow halo on focus; the accent outline is the only focus mark */
+.tt-segmented .nav-link:focus,
+.tt-segmented .nav-link:focus-visible {
+  box-shadow: none;
+}
+
 .tt-segmented .nav-link:focus-visible {
   outline: 3px solid var(--tt-accent);
   outline-offset: 2px;
@@ -415,9 +421,10 @@ button:focus-visible,
   margin-top: 0.15rem;
 }
 
-/* A .row has negative gutter margins, so a real border would overhang the content; draw the rule inside them */
+/* A .row has negative gutter margins, so a real border would overhang the content; draw the rule inside them,
+   starting at the content edge and no wider than the stats column above it (.tt-home-support, 50rem) */
 .tt-home-about {
-  background: linear-gradient(var(--tt-ink), var(--tt-ink)) center top / calc(100% - var(--bs-gutter-x)) 2px no-repeat;
+  background: linear-gradient(var(--tt-ink), var(--tt-ink)) calc(var(--bs-gutter-x) * 0.5) top / min(calc(100% - var(--bs-gutter-x)), 50rem) 2px no-repeat;
   padding-top: 1.75rem;
 }
 
@@ -636,8 +643,11 @@ button:focus-visible,
   margin: 1.5rem 0 1rem;
 }
 
+/* Each item is a column whose value sits at the bottom, so values share one baseline when a label wraps */
 .tt-kpi-item {
   border-left: 1px solid var(--tt-border);
+  display: flex;
+  flex-direction: column;
   padding: 0.75rem 1rem;
 }
 
@@ -658,7 +668,8 @@ button:focus-visible,
   font-variant-numeric: tabular-nums;
   font-weight: 800;
   line-height: 1.1;
-  margin: 0.2rem 0 0;
+  margin: auto 0 0;
+  padding-top: 0.2rem;
 }
 
 .tt-alert-text {
@@ -1447,6 +1458,40 @@ button:focus-visible,
   width: 100%;
 }
 
+/* Results page: site list, side column, feedback form. Stacked in that order below 1200px. From 1200px a
+   two-column grid with the same columns and gutters as the .row it replaces, the side column spanning both
+   rows, so the form follows the site list directly. */
+.sp-report-layout > .sp-report-feedback {
+  margin-top: 0;
+}
+
+@media (min-width: 1200px) {
+  .sp-report-layout {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  .sp-report-layout > * {
+    width: auto;
+  }
+
+  .sp-report-main {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .sp-report-side {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+
+  .sp-report-feedback {
+    grid-column: 1;
+    grid-row: 2;
+  }
+}
+
 /* "Was this page useful?" form at the end of report pages */
 .sp-feedback {
   border-top: 2px solid var(--tt-ink);
@@ -1596,6 +1641,13 @@ button:focus-visible,
   .sp-link-list li,
   .sp-side-links li {
     padding: 0.35rem 0;
+  }
+
+  /* A lone link under a notice (no-match site search): a full 44px row */
+  .sp-tap-link {
+    align-items: center;
+    display: inline-flex;
+    min-height: 2.75rem;
   }
 }
 
