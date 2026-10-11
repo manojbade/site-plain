@@ -107,13 +107,26 @@ class GeocodingServiceTest {
                 """).approximate()).isFalse();
         assertThat(parse("""
                 [{"lat":"39.8","lon":"-84.0","addresstype":"place","display_name":"x","address":{}}]
-                """).approximateMatch()).isEqualTo("place");
+                """).approximateMatch()).isEqualTo("area");
         assertThat(parse("""
                 [{"lat":"39.8","lon":"-84.0","addresstype":"road","display_name":"x","address":{}}]
                 """).approximateMatch()).isEqualTo("street");
         assertThat(parse("""
                 [{"lat":"39.8","lon":"-84.0","display_name":"x","address":{}}]
                 """).approximateMatch()).isEqualTo("area");
+    }
+
+    @Test
+    void nominatimAddressTypes_mapOntoTheApproximateMatchWords() throws Exception {
+        String[][] cases = {{"city_district", "city district"}, {"neighbourhood", "neighborhood"}, {"town", "town"},
+                {"county", "county"}, {"postcode", "ZIP code"}, {"amenity", "area"}, {"isolated_dwelling", "area"}};
+        for (String[] c : cases) {
+            String approx = parse("""
+                    [{"lat":"39.8","lon":"-84.0","place_rank":20,"addresstype":"%s","display_name":"x","address":{}}]
+                    """.formatted(c[0])).approximateMatch();
+            assertThat(approx).as(c[0]).isEqualTo(c[1]);
+            assertThat(com.siteplain.support.ApproximateMatch.LABELS).contains(approx);
+        }
     }
 
     @Test

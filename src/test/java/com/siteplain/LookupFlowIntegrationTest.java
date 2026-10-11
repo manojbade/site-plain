@@ -9,6 +9,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.siteplain.domain.model.GeocodedAddress;
 import com.siteplain.service.GeocodingService;
+import com.siteplain.service.ResultsLink;
+import com.siteplain.service.ResultsTokens;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -42,6 +44,9 @@ class LookupFlowIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private ResultsTokens resultsTokens;
 
     @MockitoBean
     private GeocodingService geocodingService;
@@ -103,7 +108,7 @@ class LookupFlowIntegrationTest {
     }
 
     @Test
-    void anUnresolvedLookupShowsWhatWasTypedFromTheEncryptedLink() throws Exception {
+    void anUnresolvedLookupShowsAGenericPageAndItsLinkCarriesNothingTyped() throws Exception {
         when(geocodingService.geocode(anyString())).thenReturn(GeocodedAddress.unresolved("zzqx nowhere"));
         int auditBefore = auditRows();
 
@@ -112,9 +117,14 @@ class LookupFlowIntegrationTest {
                 .andReturn().getResponse().getRedirectedUrl();
         assertThat(location).matches("/results\\?r=[A-Za-z0-9_-]+");
         assertThat(auditRows()).isEqualTo(auditBefore + 1);
+        ResultsLink link = resultsTokens.decode(location.substring("/results?r=".length())).orElseThrow();
+        assertThat(link.unresolved()).isTrue();
+        assertThat(link.raw()).isNull();
+        assertThat(link.label()).isNull();
 
         String html = mockMvc.perform(get(location)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
-        assertThat(html).contains("Address could not be resolved").contains("zzqx nowhere");
+        assertThat(html).contains("Address could not be resolved").doesNotContain("zzqx nowhere")
+                .doesNotContain("Submitted address");
         assertThat(auditRows()).isEqualTo(auditBefore + 1);
     }
 

@@ -7,7 +7,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * coordinates never appear in the URL. Field names are short to keep links short.
  *
  * @param label     the geocoder's address label (the page title); null for an unresolved lookup
- * @param raw       the address as the visitor typed it
+ * @param raw       the address as the visitor typed it (shown in the PDF); null for an unresolved lookup
  * @param lat       latitude, null for an unresolved lookup
  * @param lng       longitude, null for an unresolved lookup
  * @param state     two-letter state code from the geocoder
@@ -26,7 +26,7 @@ public record ResultsLink(
         @JsonProperty("t") long issuedAt
 ) {
 
-    /** A lookup the geocoders could not place: the page says so and shows what was typed. */
+    /** A lookup the geocoders could not place: the page says so, generically, and shows nothing typed. */
     public boolean unresolved() {
         return lat == null || lng == null;
     }

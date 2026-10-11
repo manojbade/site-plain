@@ -12,6 +12,7 @@ import com.siteplain.service.NplLookupService;
 import com.siteplain.service.ResultsLink;
 import com.siteplain.service.ResultsPdfService;
 import com.siteplain.service.ResultsTokens;
+import com.siteplain.support.ApproximateMatch;
 import com.siteplain.support.DisplayDates;
 import com.siteplain.support.StateNames;
 import com.siteplain.support.StateResourceRegistry;
@@ -25,7 +26,6 @@ import java.time.Clock;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.regex.Pattern;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ContentDisposition;
@@ -44,8 +44,6 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 @Controller
 public class LookupController {
-
-    private static final Pattern APPROXIMATE_MATCH_LABEL = Pattern.compile("[A-Za-z ]{1,30}");
 
     private final GeocodingService geocodingService;
     private final NplLookupService nplLookupService;
@@ -111,8 +109,9 @@ public class LookupController {
         long issuedAt = clock.instant().getEpochSecond();
         if (!geocodedAddress.resolved() || !UsCoverageArea.contains(geocodedAddress.latitude(), geocodedAddress.longitude())) {
             auditService.logLookup(geocodedAddress, new NplLookupResult(geocodedAddress, List.of(), null, true));
+            // Nothing typed goes into the link: the page is the same generic "could not resolve" for everyone.
             redirectAttributes.addAttribute("r", resultsTokens.encode(
-                    new ResultsLink(null, typed, null, null, null, null, null, issuedAt)));
+                    new ResultsLink(null, null, null, null, null, null, null, issuedAt)));
             return "redirect:/results";
         }
         // Run here so the audit row has the real result count; GET /results runs it again to render.
@@ -151,7 +150,8 @@ public class LookupController {
         if (token != null) {
             ResultsLink link = decodeLink(token);
             if (link.unresolved()) {
-                model.addAttribute("viewModel", unresolvedViewModel(link.raw(), null));
+                // Generic page; links made before the typed text was left out still carry it, and it is not shown.
+                model.addAttribute("viewModel", unresolvedViewModel());
                 return "results";
             }
             requireCovered(link.lat(), link.lng());
@@ -160,13 +160,13 @@ public class LookupController {
         }
         if ("unresolved".equalsIgnoreCase(error) || lat == null || lng == null) {
             // An old unresolved link echoed the typed address from its URL; now nothing from the URL is shown.
-            model.addAttribute("viewModel", unresolvedViewModel(null, null));
+            model.addAttribute("viewModel", unresolvedViewModel());
             return "results";
         }
         if (!UsCoverageArea.contains(lat, lng)) {
             // Not a point any lookup could produce. Answering would give a confident "no sites".
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
-            model.addAttribute("viewModel", unresolvedViewModel(null, null));
+            model.addAttribute("viewModel", unresolvedViewModel());
             return "results";
         }
         model.addAttribute("viewModel", buildResolvedViewModel(legacyAddress(lat, lng, approx), true, legacyPdfPath(lat, lng, approx)));
@@ -310,10 +310,10 @@ public class LookupController {
         );
     }
 
-    private ResultsViewModel unresolvedViewModel(String inputAddress, String normalizedAddress) {
+    private ResultsViewModel unresolvedViewModel() {
         return new ResultsViewModel(
-                inputAddress,
-                normalizedAddress,
+                null,
+                null,
                 true,
                 false,
                 0,
@@ -333,13 +333,12 @@ public class LookupController {
         );
     }
 
-    /** What a coarse geocoder match was (city, ZIP code, ...), kept to plain words since it comes from the URL. */
+    /**
+     * What a coarse geocoder match was (city, ZIP code, ...). Held to the words the geocoders produce
+     * (ApproximateMatch), with "area" for anything else, since on an old link it comes from the URL.
+     */
     static String approximateMatchLabel(String approx) {
-        if (approx == null || approx.isBlank()) {
-            return null;
-        }
-        String trimmed = approx.trim();
-        return APPROXIMATE_MATCH_LABEL.matcher(trimmed).matches() ? trimmed : "area";
+        return ApproximateMatch.label(approx);
     }
 
     private static String normalizeStateCode(String stateCode) {

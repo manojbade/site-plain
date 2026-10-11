@@ -128,16 +128,22 @@ class LookupControllerRequestTest {
         assertThat(location).startsWith("/results?r=").doesNotContain("Null").doesNotContain("error=");
         ResultsLink link = decode(location);
         assertThat(link.unresolved()).isTrue();
-        assertThat(link.raw()).isEqualTo("Null Island");
+        assertThat(link.raw()).isNull();
         verify(auditService).logLookup(any(), argThat(NplLookupResult::unresolved));
         verify(nplLookupService, never()).findSitesNear(any());
     }
 
     @Test
-    void approximateMatchLabel_keepsPlainWordsOnly() {
+    void approximateMatchLabel_keepsOnlyTheWordsTheGeocodersProduce() {
         assertThat(LookupController.approximateMatchLabel(null)).isNull();
         assertThat(LookupController.approximateMatchLabel(" ")).isNull();
         assertThat(LookupController.approximateMatchLabel("ZIP code")).isEqualTo("ZIP code");
+        assertThat(LookupController.approximateMatchLabel("zip CODE")).isEqualTo("ZIP code");
+        assertThat(LookupController.approximateMatchLabel(" city ")).isEqualTo("city");
+        assertThat(LookupController.approximateMatchLabel("street")).isEqualTo("street");
+        // Plain letters are no longer enough: a crafted phrase is shown as the generic word.
+        assertThat(LookupController.approximateMatchLabel("certified clean zone")).isEqualTo("area");
+        assertThat(LookupController.approximateMatchLabel("isolated dwelling")).isEqualTo("area");
         assertThat(LookupController.approximateMatchLabel("<script>alert(1)</script>")).isEqualTo("area");
         assertThat(LookupController.approximateMatchLabel("x".repeat(31))).isEqualTo("area");
     }

@@ -16,7 +16,7 @@
 <main class="container py-3 py-lg-4">
   <div class="row justify-content-center" th:if="${viewModel.unresolved}">
     <div class="col-lg-7">
-      <div th:replace="~{error/unresolved :: unresolved(${viewModel.inputAddress}, ${viewModel.normalizedAddress})}"></div>
+      <div th:replace="~{error/unresolved :: unresolved}"></div>
     </div>
   </div>
   <th:block th:if="${!viewModel.unresolved}">

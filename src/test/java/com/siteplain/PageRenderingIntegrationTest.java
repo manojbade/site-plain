@@ -194,6 +194,18 @@ class PageRenderingIntegrationTest {
         String unresolved = page(get("/results").param("error", "unresolved").param("address", "Fake claim text"), 200);
         assertThat(unresolved).contains("Address could not be resolved").doesNotContain("Fake claim text");
 
+        // The approx label is held to the geocoders' words; anything else reads as the generic "area".
+        String crafted = page(get("/results").param("lat", "39.825").param("lng", "-84.055")
+                .param("approx", "certified safe zone"), 200);
+        assertThat(crafted.replaceAll("\\s+", " ")).contains("only to the following <span>area</span>:")
+                .doesNotContain("certified safe zone")
+                .contains("href=\"/results/pdf?lat=39.825&amp;lng=-84.055&amp;approx=area\"");
+
+        // An unresolved link made before the typed text was left out still decodes, but shows nothing typed.
+        String oldUnresolved = page(get("/results").param("r", resultsTokens.encode(
+                new ResultsLink(null, "Call 555-0100 for a free test", null, null, null, null, null, 1_791_600_000L))), 200);
+        assertThat(oldUnresolved).contains("Address could not be resolved").doesNotContain("555-0100");
+
         mockMvc.perform(get("/results").param("r", "not-a-real-link")).andExpect(status().isBadRequest());
         mockMvc.perform(get("/results/pdf").param("r", "not-a-real-link")).andExpect(status().isBadRequest());
     }

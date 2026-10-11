@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.siteplain.config.GeocoderProperties;
 import com.siteplain.domain.model.GeocodedAddress;
+import com.siteplain.support.ApproximateMatch;
 import com.siteplain.support.ExpiringLruCache;
 import com.siteplain.support.StateNames;
 import java.io.IOException;
@@ -249,7 +250,8 @@ public class GeocodingService {
 
     /**
      * Null for a house or building level match. Otherwise a short description of what was matched
-     * (street, city, ZIP code, county, ...), so the results page can say the location is approximate.
+     * (street, city, ZIP code, county, ...; see ApproximateMatch for the full list, with "area" for any other
+     * type), so the results page can say the location is approximate.
      * A street match is approximate: the point is somewhere on the road, which can be miles from
      * the typed house number (Nominatim returns the road when the number does not exist).
      */
@@ -268,15 +270,7 @@ public class GeocodingService {
                 || ("place".equals(lowerType) && text(best.path("address"), "house_number") != null))) {
             return null;
         }
-        if (lowerType == null) {
-            return "area";
-        }
-        return switch (lowerType) {
-            case "road" -> "street";
-            case "postcode" -> "ZIP code";
-            case "neighbourhood" -> "neighborhood";
-            default -> lowerType.replace('_', ' ');
-        };
+        return ApproximateMatch.forNominatimType(lowerType);
     }
 
     private String text(JsonNode node, String... fields) {
