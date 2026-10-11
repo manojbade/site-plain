@@ -28,6 +28,11 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>Anyone can post here, so nothing is stored, the body is capped, every logged value is reduced
  * to a short safe form, and the log is throttled to one line a minute per directive (with a count).
  * Always 204.
+ *
+ * <p>Read these lines as unauthenticated hints, not evidence. Nothing ties a report to a real page
+ * view: any client can post one naming any directive, origin and path, and a flood of fake reports
+ * for one directive can also hide a real one inside that directive's per-minute count. Before acting
+ * on a line (loosening the policy, chasing an "attack"), reproduce it in a browser.
  */
 @RestController
 public class CspReportController {
