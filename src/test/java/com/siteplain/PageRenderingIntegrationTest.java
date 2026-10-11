@@ -6,6 +6,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.siteplain.data.loader.SeoPageCacheBuilder;
 import com.siteplain.data.loader.StatePageCacheBuilder;
+import com.siteplain.service.ResultsLink;
+import com.siteplain.service.ResultsTokens;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -19,6 +21,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
  * Renders real site, state and results pages against fixture rows and checks the text users and
@@ -43,6 +46,9 @@ class PageRenderingIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private ResultsTokens resultsTokens;
 
     @Autowired
     private SeoPageCacheBuilder seoPageCacheBuilder;
@@ -104,11 +110,7 @@ class PageRenderingIntegrationTest {
                 .andReturn().getResponse().getContentAsString();
         assertThat(unmapped).contains("href=\"https://www.epa.gov/superfund/render-test-unmapped\"");
 
-        String results = mockMvc.perform(get("/results")
-                        .param("lat", "39.825")
-                        .param("lng", "-84.055")
-                        .param("address", "Render Test Address, Dayton, OH")
-                        .param("state", "OH"))
+        String results = mockMvc.perform(results(39.825, -84.055, "Render Test Address, Dayton, OH", "OH", null))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         assertThat(results).contains("href=\"https://www.epa.gov/superfund/render-test-landfill\"")
@@ -117,27 +119,18 @@ class PageRenderingIntegrationTest {
 
     @Test
     void resultsPage_showsApproximateLocationNoticeForCoarseMatches() throws Exception {
-        String approximate = mockMvc.perform(get("/results")
-                        .param("lat", "39.825")
-                        .param("lng", "-84.055")
-                        .param("address", "Dayton, Montgomery County, Ohio, United States")
-                        .param("state", "OH")
-                        .param("geocoder", "nominatim")
-                        .param("approx", "city"))
+        String approximate = mockMvc.perform(results(39.825, -84.055, "Dayton, Montgomery County, Ohio, United States", "OH", "city"))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         assertThat(approximate).contains("<span class=\"sp-notice-title\">Approximate location</span>")
-                .contains("approx=city");
+                .containsPattern("href=\"/results/pdf\\?r=[A-Za-z0-9_-]+\"")
+                .doesNotContain("approx=city");
         assertThat(approximate.replaceAll("\\s+", " ")).contains("only to the following <span>city</span>: "
                 + "<span>Dayton, Montgomery County, Ohio, United States</span>");
         // The caveat comes before the summary numbers.
         assertThat(approximate.indexOf("sp-notice-title")).isLessThan(approximate.indexOf("tt-kpi-strip"));
 
-        String exact = mockMvc.perform(get("/results")
-                        .param("lat", "39.825")
-                        .param("lng", "-84.055")
-                        .param("address", "1 Main St, Dayton, OH")
-                        .param("state", "OH"))
+        String exact = mockMvc.perform(results(39.825, -84.055, "1 Main St, Dayton, OH", "OH", null))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         assertThat(exact).doesNotContain("Approximate location");
@@ -165,14 +158,44 @@ class PageRenderingIntegrationTest {
                             .param("address", "1 Example Street, Woburn, MA 01801"))
                     .andExpect(status().isBadRequest());
         }
+        // A results link that decodes but holds such a point (only a forged key could make one) is refused too.
+        mockMvc.perform(results(0.0, 0.0, "1 Example Street, Woburn, MA 01801", "MA", null))
+                .andExpect(status().isBadRequest());
         assertThat(auditRowCount()).isEqualTo(auditRows);
 
-        mockMvc.perform(get("/results")
-                        .param("lat", "39.825")
-                        .param("lng", "-84.055")
-                        .param("address", "1 Main St, Dayton, OH"))
+        // Viewing results never writes lookup_audit; only POST /lookup does (SEC-7).
+        mockMvc.perform(results(39.825, -84.055, "1 Main St, Dayton, OH", null, null))
                 .andExpect(status().isOk());
-        assertThat(auditRowCount()).isEqualTo(auditRows + 1);
+        mockMvc.perform(get("/results").param("lat", "39.825").param("lng", "-84.055").param("address", "1 Main St"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/results/pdf").param("lat", "39.825").param("lng", "-84.055"))
+                .andExpect(status().isOk());
+        assertThat(auditRowCount()).isEqualTo(auditRows);
+    }
+
+    @Test
+    void oldStyleLinks_showCoordinatesOnlyAndKeepOnlyTheApproximateCaveat() throws Exception {
+        String html = page(get("/results")
+                .param("lat", "39.825").param("lng", "-84.055")
+                .param("address", "1 Example Street, Woburn, MA 01801")
+                .param("raw", "1 example street")
+                .param("state", "MA")
+                .param("geocoder", "manual")
+                .param("approx", "city"), 200);
+        assertThat(html).contains("<h1 class=\"tt-page-title mb-3\">39.82500, -84.05500</h1>")
+                .contains("Render Test Landfill")
+                .contains("Approximate location")
+                .contains("href=\"/results/pdf?lat=39.825&amp;lng=-84.055&amp;approx=city\"")
+                .doesNotContain("Example Street")
+                .doesNotContain("1 example street")
+                .doesNotContain("<li>MA</li>")
+                .doesNotContain("Active sites in this state with no published boundary");
+
+        String unresolved = page(get("/results").param("error", "unresolved").param("address", "Fake claim text"), 200);
+        assertThat(unresolved).contains("Address could not be resolved").doesNotContain("Fake claim text");
+
+        mockMvc.perform(get("/results").param("r", "not-a-real-link")).andExpect(status().isBadRequest());
+        mockMvc.perform(get("/results/pdf").param("r", "not-a-real-link")).andExpect(status().isBadRequest());
     }
 
     @Test
@@ -181,8 +204,7 @@ class PageRenderingIntegrationTest {
                 {"address", "x".repeat(201)}, {"raw", "x".repeat(201)}, {"state", "OHX"},
                 {"geocoder", "x".repeat(21)}, {"approx", "x".repeat(31)}};
         for (String[] param : overlong) {
-            mockMvc.perform(get("/results").param("lat", "39.825").param("lng", "-84.055")
-                            .param("address", "1 Main St, Dayton, OH").param(param[0], param[1]))
+            mockMvc.perform(results(39.825, -84.055, "1 Main St, Dayton, OH", null, null).param(param[0], param[1]))
                     .andExpect(status().isBadRequest());
             mockMvc.perform(get("/results/pdf").param("lat", "39.825").param("lng", "-84.055")
                             .param("address", "1 Main St, Dayton, OH").param(param[0], param[1]))
@@ -204,11 +226,7 @@ class PageRenderingIntegrationTest {
                 .andReturn().getResponse().getContentAsString();
         assertThat(unmapped).contains("EPA exposure status as of October 10, 2026");
 
-        String results = mockMvc.perform(get("/results")
-                        .param("lat", "39.825")
-                        .param("lng", "-84.055")
-                        .param("address", "1 Main St, Dayton, OH")
-                        .param("state", "OH"))
+        String results = mockMvc.perform(results(39.825, -84.055, "1 Main St, Dayton, OH", "OH", null))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         assertThat(results).contains("EPA exposure status as of October 10, 2026");
@@ -221,18 +239,12 @@ class PageRenderingIntegrationTest {
 
     @Test
     void resultsPage_saysInsideBoundaryForAPointInsideTheSite() throws Exception {
-        String inside = mockMvc.perform(get("/results")
-                        .param("lat", "39.825")
-                        .param("lng", "-84.055")
-                        .param("address", "1 Main St, Dayton, OH"))
+        String inside = mockMvc.perform(results(39.825, -84.055, "1 Main St, Dayton, OH", null, null))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         assertThat(inside).contains("Inside the EPA site boundary").doesNotContain("Less than 10 feet");
 
-        String outside = mockMvc.perform(get("/results")
-                        .param("lat", "39.825")
-                        .param("lng", "-84.045")
-                        .param("address", "2 Main St, Dayton, OH"))
+        String outside = mockMvc.perform(results(39.825, -84.045, "2 Main St, Dayton, OH", null, null))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         assertThat(outside).contains("Render Test Landfill").doesNotContain("Inside the EPA site boundary");
@@ -240,11 +252,7 @@ class PageRenderingIntegrationTest {
 
     @Test
     void resultsPage_showsStatusLegendAndStatusSquares() throws Exception {
-        String results = mockMvc.perform(get("/results")
-                        .param("lat", "39.825")
-                        .param("lng", "-84.055")
-                        .param("address", "1 Main St, Dayton, OH")
-                        .param("state", "OH"))
+        String results = mockMvc.perform(results(39.825, -84.055, "1 Main St, Dayton, OH", "OH", null))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         assertThat(results).contains("class=\"sp-status-legend\"")
@@ -287,8 +295,7 @@ class PageRenderingIntegrationTest {
                 .doesNotContain("<script>alert(1)")
                 .doesNotContain("<b>vapor");
 
-        String results = page(get("/results").param("lat", "39.825").param("lng", "-84.055")
-                .param("address", "1 Main St, Dayton, OH").param("state", "OH"), 200);
+        String results = page(results(39.825, -84.055, "1 Main St, Dayton, OH", "OH", null), 200);
         assertThat(results).contains("<span>" + expected + "</span>")
                 .doesNotContain("<script>alert(1)")
                 .doesNotContain("<b>vapor");
@@ -308,12 +315,9 @@ class PageRenderingIntegrationTest {
     @Test
     void dataPages_haveNoInlineScriptsStylesOrEmDashes() throws Exception {
         Map<String, String> pages = Map.of(
-                "results with sites", page(get("/results").param("lat", "39.825").param("lng", "-84.055")
-                        .param("address", "1 Main St, Dayton, OH").param("state", "OH"), 200),
-                "results approximate", page(get("/results").param("lat", "39.825").param("lng", "-84.055")
-                        .param("address", "Dayton, OH").param("state", "OH").param("approx", "city"), 200),
-                "results without sites", page(get("/results").param("lat", "38.5").param("lng", "-116.5")
-                        .param("address", "Somewhere, NV").param("state", "NV"), 200),
+                "results with sites", page(results(39.825, -84.055, "1 Main St, Dayton, OH", "OH", null), 200),
+                "results approximate", page(results(39.825, -84.055, "Dayton, OH", "OH", "city"), 200),
+                "results without sites", page(results(38.5, -116.5, "Somewhere, NV", "NV", null), 200),
                 "results unresolved", page(get("/results").param("error", "unresolved").param("address", "nowhere"), 200),
                 "site", page(get("/site/OHR000000001"), 200),
                 "site without boundary", page(get("/site/OHR000000002"), 200),
@@ -341,8 +345,7 @@ class PageRenderingIntegrationTest {
 
     @Test
     void resultsPage_showsSummaryRowAndPutsTheMapAfterTheSiteList() throws Exception {
-        String inside = page(get("/results").param("lat", "39.825").param("lng", "-84.055")
-                .param("address", "1 Main St, Dayton, OH").param("state", "OH"), 200);
+        String inside = page(results(39.825, -84.055, "1 Main St, Dayton, OH", "OH", null), 200);
         assertThat(inside).contains("<dt>Active sites within 3 miles</dt>")
                 .contains("<dt>Nearest site boundary</dt><dd>Inside</dd>")
                 .contains("<dt>Exposure not under control</dt><dd class=\"tt-alert-text\">1</dd>")
@@ -368,8 +371,7 @@ class PageRenderingIntegrationTest {
         assertThat(inside).contains("Active sites in this state with no published boundary")
                 .contains("href=\"/site/OHR000000002\"");
 
-        String none = page(get("/results").param("lat", "38.5").param("lng", "-116.5")
-                .param("address", "Somewhere, NV").param("state", "NV"), 200);
+        String none = page(results(38.5, -116.5, "Somewhere, NV", "NV", null), 200);
         assertThat(none).contains("No active EPA Superfund sites found within 3 miles of this address.")
                 .contains("0 active Superfund sites found within 3 miles")
                 .doesNotContain("tt-kpi-strip")
@@ -413,6 +415,12 @@ class PageRenderingIntegrationTest {
 
         String none = page(get("/search/sites").param("q", "zzqx no such site"), 200);
         assertThat(none).contains("No matching site found").contains("Try an address lookup instead");
+    }
+
+    /** GET /results with an encrypted link, as POST /lookup would have issued it. */
+    private MockHttpServletRequestBuilder results(double lat, double lng, String label, String state, String approx) {
+        return get("/results").param("r", resultsTokens.encode(
+                new ResultsLink(label, label, lat, lng, state, "census", approx, 1_791_600_000L)));
     }
 
     private String page(org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request,

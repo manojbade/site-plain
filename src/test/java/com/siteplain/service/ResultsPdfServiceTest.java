@@ -79,6 +79,20 @@ class ResultsPdfServiceTest {
                 .startsWith("%PDF-".getBytes(StandardCharsets.ISO_8859_1));
     }
 
+    @Test
+    void pdfTemplate_leavesOutTheQueriedAddressRowWhenALinkCarriesCoordinatesOnly() {
+        ResultsViewModel full = viewModel(null);
+        ResultsViewModel coordinatesOnly = new ResultsViewModel(null, "42.48000, -71.15000", false, true, 1, full.sites(),
+                null, null, 42.48, -71.15, null, null, 1337, List.of(), 15, null, "October 10, 2026", null);
+        Context context = new Context(Locale.US);
+        context.setVariable("viewModel", coordinatesOnly);
+        String html = templateEngine().process("results-pdf", context);
+
+        assertThat(html).doesNotContain("Queried address").contains("<td>42.48000, -71.15000</td>");
+        context.setVariable("viewModel", full);
+        assertThat(templateEngine().process("results-pdf", context)).contains("<td>Queried address</td>");
+    }
+
     private static ResultsViewModel viewModel(String approximateMatch) {
         return viewModel(approximateMatch, sampleSite());
     }
@@ -101,7 +115,8 @@ class ResultsPdfServiceTest {
                 List.of(),
                 15,
                 approximateMatch,
-                "October 10, 2026"
+                "October 10, 2026",
+                null
         );
     }
 

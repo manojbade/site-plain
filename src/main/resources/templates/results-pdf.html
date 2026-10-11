@@ -277,7 +277,8 @@
       <td>Report date</td>
       <td th:text="${generatedOn}">April 3, 2026</td>
     </tr>
-    <tr>
+    <!--/* An old-format link carries coordinates only, so there is no typed address to show. */-->
+    <tr th:if="${viewModel.inputAddress != null}">
       <td>Queried address</td>
       <td th:text="${viewModel.inputAddress}">57 Salem Street, Woburn, MA 01801</td>
     </tr>

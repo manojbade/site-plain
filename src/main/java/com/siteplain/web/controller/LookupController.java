@@ -9,19 +9,24 @@ import com.siteplain.domain.view.ResultsViewModel;
 import com.siteplain.service.AuditService;
 import com.siteplain.service.GeocodingService;
 import com.siteplain.service.NplLookupService;
+import com.siteplain.service.ResultsLink;
 import com.siteplain.service.ResultsPdfService;
+import com.siteplain.service.ResultsTokens;
 import com.siteplain.support.DisplayDates;
 import com.siteplain.support.StateNames;
 import com.siteplain.support.StateResourceRegistry;
 import com.siteplain.support.UsCoverageArea;
+import com.siteplain.web.BadRequestException;
 import com.siteplain.web.RequestInput;
 import com.siteplain.web.form.AddressLookupForm;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+import java.time.Clock;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -35,6 +40,7 @@ import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
+import org.springframework.web.util.UriComponentsBuilder;
 
 @Controller
 public class LookupController {
@@ -47,24 +53,47 @@ public class LookupController {
     private final NplBoundaryRepository nplBoundaryRepository;
     private final ResultsPdfService resultsPdfService;
     private final HumanExposureRepository humanExposureRepository;
+    private final ResultsTokens resultsTokens;
+    private final Clock clock;
 
     @Value("${MAPBOX_PUBLIC_TOKEN:}")
     private String mapboxPublicToken;
 
+    @Autowired
     public LookupController(GeocodingService geocodingService,
                             NplLookupService nplLookupService,
                             AuditService auditService,
                             NplBoundaryRepository nplBoundaryRepository,
                             ResultsPdfService resultsPdfService,
-                            HumanExposureRepository humanExposureRepository) {
+                            HumanExposureRepository humanExposureRepository,
+                            ResultsTokens resultsTokens) {
+        this(geocodingService, nplLookupService, auditService, nplBoundaryRepository, resultsPdfService,
+                humanExposureRepository, resultsTokens, Clock.systemUTC());
+    }
+
+    LookupController(GeocodingService geocodingService,
+                     NplLookupService nplLookupService,
+                     AuditService auditService,
+                     NplBoundaryRepository nplBoundaryRepository,
+                     ResultsPdfService resultsPdfService,
+                     HumanExposureRepository humanExposureRepository,
+                     ResultsTokens resultsTokens,
+                     Clock clock) {
         this.geocodingService = geocodingService;
         this.nplLookupService = nplLookupService;
         this.auditService = auditService;
         this.nplBoundaryRepository = nplBoundaryRepository;
         this.resultsPdfService = resultsPdfService;
         this.humanExposureRepository = humanExposureRepository;
+        this.resultsTokens = resultsTokens;
+        this.clock = clock;
     }
 
+    /**
+     * The one place a lookup happens: geocode, find the sites, write the lookup_audit row, then
+     * redirect to /results?r=<encrypted link>. The address and coordinates travel only inside the
+     * encrypted link, so they never reach the URL, browser history or analytics.
+     */
     @PostMapping("/lookup")
     public String lookup(@Valid @ModelAttribute("lookupForm") AddressLookupForm form,
                          BindingResult bindingResult,
@@ -77,27 +106,37 @@ public class LookupController {
             model.addAttribute("viewModel", HomeController.buildHomePageViewModel(nplBoundaryRepository));
             return "index";
         }
-        GeocodedAddress geocodedAddress = geocodingService.geocode(form.getAddress().trim());
+        String typed = form.getAddress().trim();
+        GeocodedAddress geocodedAddress = geocodingService.geocode(typed);
+        long issuedAt = clock.instant().getEpochSecond();
         if (!geocodedAddress.resolved() || !UsCoverageArea.contains(geocodedAddress.latitude(), geocodedAddress.longitude())) {
-            auditService.logLookup(geocodedAddress, new NplLookupResult(geocodedAddress, java.util.List.of(), null, true));
-            redirectAttributes.addAttribute("error", "unresolved");
-            redirectAttributes.addAttribute("address", form.getAddress().trim());
+            auditService.logLookup(geocodedAddress, new NplLookupResult(geocodedAddress, List.of(), null, true));
+            redirectAttributes.addAttribute("r", resultsTokens.encode(
+                    new ResultsLink(null, typed, null, null, null, null, null, issuedAt)));
             return "redirect:/results";
         }
-        redirectAttributes.addAttribute("lat", geocodedAddress.latitude());
-        redirectAttributes.addAttribute("lng", geocodedAddress.longitude());
-        redirectAttributes.addAttribute("address", geocodedAddress.normalizedAddress());
-        redirectAttributes.addAttribute("raw", form.getAddress().trim());
-        redirectAttributes.addAttribute("state", geocodedAddress.stateCode());
-        redirectAttributes.addAttribute("geocoder", geocodedAddress.geocoderUsed());
-        if (geocodedAddress.approximate()) {
-            redirectAttributes.addAttribute("approx", geocodedAddress.approximateMatch());
-        }
+        // Run here so the audit row has the real result count; GET /results runs it again to render.
+        auditService.logLookup(geocodedAddress, nplLookupService.findSitesNear(geocodedAddress));
+        redirectAttributes.addAttribute("r", resultsTokens.encode(new ResultsLink(
+                geocodedAddress.normalizedAddress(),
+                typed,
+                geocodedAddress.latitude(),
+                geocodedAddress.longitude(),
+                geocodedAddress.stateCode(),
+                geocodedAddress.geocoderUsed(),
+                geocodedAddress.approximateMatch(),
+                issuedAt)));
         return "redirect:/results";
     }
 
+    /**
+     * Renders a results link. Never writes lookup_audit (POST /lookup did). Links from before the
+     * encrypted format (lat, lng, address, ... in the query) still work but show the coordinates
+     * only: nothing else in such a URL can be trusted, so no address label, state or geocoder.
+     */
     @GetMapping("/results")
-    public String showResults(@RequestParam(required = false) Double lat,
+    public String showResults(@RequestParam(name = "r", required = false) String token,
+                              @RequestParam(required = false) Double lat,
                               @RequestParam(required = false) Double lng,
                               @RequestParam(required = false) String address,
                               @RequestParam(required = false) String raw,
@@ -109,27 +148,34 @@ public class LookupController {
                               HttpServletResponse response) {
         requireCappedResultParams(address, raw, state, geocoder, approx);
         RequestInput.maxLength(error, RequestInput.MAX_SHORT_PARAM, "error");
-        if ("unresolved".equalsIgnoreCase(error)) {
-            model.addAttribute("viewModel", unresolvedViewModel(raw != null ? raw : address, address));
+        if (token != null) {
+            ResultsLink link = decodeLink(token);
+            if (link.unresolved()) {
+                model.addAttribute("viewModel", unresolvedViewModel(link.raw(), null));
+                return "results";
+            }
+            requireCovered(link.lat(), link.lng());
+            model.addAttribute("viewModel", buildResolvedViewModel(fromLink(link), true, pdfPathForToken(token)));
             return "results";
         }
-        if (lat == null || lng == null || address == null) {
+        if ("unresolved".equalsIgnoreCase(error) || lat == null || lng == null) {
+            // An old unresolved link echoed the typed address from its URL; now nothing from the URL is shown.
             model.addAttribute("viewModel", unresolvedViewModel(null, null));
             return "results";
         }
         if (!UsCoverageArea.contains(lat, lng)) {
             // Not a point any lookup could produce. Answering would give a confident "no sites".
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
-            model.addAttribute("viewModel", unresolvedViewModel(raw != null ? raw : address, address));
+            model.addAttribute("viewModel", unresolvedViewModel(null, null));
             return "results";
         }
-        ResultsViewModel viewModel = buildResolvedViewModel(lat, lng, address, raw, state, geocoder, approx, true, true);
-        model.addAttribute("viewModel", viewModel);
+        model.addAttribute("viewModel", buildResolvedViewModel(legacyAddress(lat, lng, approx), true, legacyPdfPath(lat, lng, approx)));
         return "results";
     }
 
     @GetMapping(value = "/results/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
-    public ResponseEntity<byte[]> downloadResultsPdf(@RequestParam(required = false) Double lat,
+    public ResponseEntity<byte[]> downloadResultsPdf(@RequestParam(name = "r", required = false) String token,
+                                                     @RequestParam(required = false) Double lat,
                                                      @RequestParam(required = false) Double lng,
                                                      @RequestParam(required = false) String address,
                                                      @RequestParam(required = false) String raw,
@@ -137,10 +183,22 @@ public class LookupController {
                                                      @RequestParam(required = false) String geocoder,
                                                      @RequestParam(required = false) String approx) {
         requireCappedResultParams(address, raw, state, geocoder, approx);
-        if (lat == null || lng == null || address == null || !UsCoverageArea.contains(lat, lng)) {
-            return ResponseEntity.badRequest().build();
+        GeocodedAddress location;
+        if (token != null) {
+            ResultsLink link = decodeLink(token);
+            if (link.unresolved()) {
+                throw new BadRequestException("results link for an unresolved lookup has no report");
+            }
+            requireCovered(link.lat(), link.lng());
+            location = fromLink(link);
+        } else {
+            if (lat == null || lng == null) {
+                throw new BadRequestException("results PDF without a location");
+            }
+            requireCovered(lat, lng);
+            location = legacyAddress(lat, lng, approx);
         }
-        ResultsViewModel viewModel = buildResolvedViewModel(lat, lng, address, raw, state, geocoder, approx, false, false);
+        ResultsViewModel viewModel = buildResolvedViewModel(location, false, null);
         byte[] pdf = resultsPdfService.generateResultsPdf(viewModel);
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_PDF)
@@ -151,6 +209,66 @@ public class LookupController {
                 .body(pdf);
     }
 
+    private ResultsLink decodeLink(String token) {
+        RequestInput.maxLength(token, ResultsTokens.MAX_TOKEN_LENGTH, "r");
+        return resultsTokens.decode(token).orElseThrow(() -> new BadRequestException("results link not valid"));
+    }
+
+    /** Coordinates no lookup could produce (NaN, out of range, outside US coverage) are a client error. */
+    private static void requireCovered(Double lat, Double lng) {
+        if (!UsCoverageArea.contains(lat, lng)) {
+            throw new BadRequestException("coordinates outside coverage");
+        }
+    }
+
+    private static GeocodedAddress fromLink(ResultsLink link) {
+        return new GeocodedAddress(
+                link.raw(),
+                link.label(),
+                null,
+                link.state(),
+                null,
+                link.geocoder(),
+                link.lat(),
+                link.lng(),
+                true,
+                approximateMatchLabel(link.approx()));
+    }
+
+    /** An old-format link: the coordinates as the label, and nothing else from the URL but the approximate caveat. */
+    private static GeocodedAddress legacyAddress(double lat, double lng, String approx) {
+        return new GeocodedAddress(
+                null,
+                coordinatesLabel(lat, lng),
+                null,
+                null,
+                null,
+                null,
+                lat,
+                lng,
+                true,
+                approximateMatchLabel(approx));
+    }
+
+    static String coordinatesLabel(double lat, double lng) {
+        return String.format(Locale.ROOT, "%.5f, %.5f", lat, lng);
+    }
+
+    private static String pdfPathForToken(String token) {
+        return UriComponentsBuilder.fromPath("/results/pdf").queryParam("r", token).build().toUriString();
+    }
+
+    private static String legacyPdfPath(double lat, double lng, String approx) {
+        UriComponentsBuilder builder = UriComponentsBuilder.fromPath("/results/pdf")
+                .queryParam("lat", lat)
+                .queryParam("lng", lng);
+        String label = approximateMatchLabel(approx);
+        if (label != null) {
+            builder.queryParam("approx", label);
+        }
+        return builder.encode().build().toUriString();
+    }
+
     private static void requireCappedResultParams(String address, String raw, String state, String geocoder, String approx) {
         RequestInput.maxLength(address, RequestInput.MAX_ADDRESS, "address");
         RequestInput.maxLength(raw, RequestInput.MAX_ADDRESS, "raw");
@@ -159,31 +277,8 @@ public class LookupController {
         RequestInput.maxLength(approx, RequestInput.MAX_APPROX, "approx");
     }
 
-    private ResultsViewModel buildResolvedViewModel(Double lat,
-                                                    Double lng,
-                                                    String address,
-                                                    String raw,
-                                                    String state,
-                                                    String geocoder,
-                                                    String approx,
-                                                    boolean includeMap,
-                                                    boolean writeAuditLog) {
-        GeocodedAddress geocodedAddress = new GeocodedAddress(
-                raw != null ? raw : address,
-                address,
-                null,
-                state,
-                null,
-                geocoder,
-                lat,
-                lng,
-                true,
-                approximateMatchLabel(approx)
-        );
+    private ResultsViewModel buildResolvedViewModel(GeocodedAddress geocodedAddress, boolean includeMap, String pdfPath) {
         NplLookupResult result = nplLookupService.findSitesNear(geocodedAddress);
-        if (writeAuditLog) {
-            auditService.logLookup(geocodedAddress, result);
-        }
 
         String siteBoundaryGeojson = null;
         if (includeMap && !result.sites().isEmpty()) {
@@ -201,16 +296,17 @@ public class LookupController {
                 result.sites().size(),
                 result.sites(),
                 includeMap ? mapboxPublicToken : null,
-                geocodedAddress.stateCode(),
-                lat,
-                lng,
+                stateCode,
+                geocodedAddress.latitude(),
+                geocodedAddress.longitude(),
                 siteBoundaryGeojson,
-                StateResourceRegistry.lookup(geocodedAddress.stateCode()),
+                StateResourceRegistry.lookup(stateCode),
                 nplBoundaryRepository.countActiveSites(),
                 nplLookupService.findActiveSitesWithoutBoundary(stateCode),
                 nplLookupService.countActiveSitesWithoutBoundary(),
                 geocodedAddress.approximateMatch(),
-                DisplayDates.format(humanExposureRepository.statusAsOfDate().orElse(null))
+                DisplayDates.format(humanExposureRepository.statusAsOfDate().orElse(null)),
+                pdfPath
         );
     }
 
@@ -231,6 +327,7 @@ public class LookupController {
                 0,
                 List.of(),
                 0,
+                null,
                 null,
                 null
         );

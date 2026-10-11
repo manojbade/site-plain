@@ -23,7 +23,8 @@ public record ResultsViewModel(
         List<NplSite> stateSitesWithoutBoundary,
         int sitesWithoutBoundaryCount,
         String approximateMatch,
-        String exposureStatusAsOf
+        String exposureStatusAsOf,
+        String pdfPath
 ) {
 
     private static final String EPA_SUPERFUND_SITE_SEARCH_URL = "https://www.epa.gov/superfund/search-superfund-sites-where-you-live";

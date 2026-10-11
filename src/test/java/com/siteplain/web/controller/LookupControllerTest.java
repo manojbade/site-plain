@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 class LookupControllerTest {
 
     // -----------------------------------------------------------------------
-    // buildFeatureCollection — GeoJSON output
+    // buildFeatureCollection: GeoJSON output
     // -----------------------------------------------------------------------
 
     @Test

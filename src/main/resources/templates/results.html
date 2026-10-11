@@ -52,7 +52,7 @@
                 <span>Share results</span>
               </button>
               <a class="btn tt-btn-secondary tt-report-share-button"
-                 th:href="@{/results/pdf(lat=${viewModel.lat}, lng=${viewModel.lng}, address=${viewModel.normalizedAddress}, raw=${viewModel.inputAddress}, state=${viewModel.stateCode}, approx=${viewModel.approximateMatch})}">
+                 th:href="${viewModel.pdfPath}">
                 Download results
               </a>
             </div>

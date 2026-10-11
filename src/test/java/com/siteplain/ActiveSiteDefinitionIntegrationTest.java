@@ -12,6 +12,8 @@ import com.siteplain.data.repository.NplBoundaryRepository;
 import com.siteplain.domain.model.GeocodedAddress;
 import com.siteplain.domain.model.NplSite;
 import com.siteplain.service.NplLookupService;
+import com.siteplain.service.ResultsLink;
+import com.siteplain.service.ResultsTokens;
 import com.siteplain.service.SitemapService;
 import java.nio.file.Path;
 import java.util.List;
@@ -44,6 +46,9 @@ class ActiveSiteDefinitionIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private ResultsTokens resultsTokens;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -183,11 +188,8 @@ class ActiveSiteDefinitionIntegrationTest {
 
     @Test
     void resultsPage_namesStateSitesWithoutBoundary() throws Exception {
-        String html = mockMvc.perform(get("/results")
-                        .param("lat", "33.775")
-                        .param("lng", "-84.395")
-                        .param("address", "Test Address, Atlanta, GA")
-                        .param("state", "GA"))
+        String html = mockMvc.perform(get("/results").param("r", resultsTokens.encode(new ResultsLink(
+                        "Test Address, Atlanta, GA", "Test Address, Atlanta, GA", 33.775, -84.395, "GA", "census", null, 1L))))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
 

@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.same;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -16,7 +18,14 @@ import com.siteplain.domain.model.NplLookupResult;
 import com.siteplain.service.AuditService;
 import com.siteplain.service.GeocodingService;
 import com.siteplain.service.NplLookupService;
+import com.siteplain.service.ResultsLink;
 import com.siteplain.service.ResultsPdfService;
+import com.siteplain.service.ResultsTokens;
+import java.net.URI;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -24,9 +33,12 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.util.UriComponentsBuilder;
 
 @ExtendWith(MockitoExtension.class)
 class LookupControllerRequestTest {
+
+    private static final Instant NOW = Instant.parse("2026-10-10T12:00:00Z");
 
     @Mock
     private GeocodingService geocodingService;
@@ -46,6 +58,8 @@ class LookupControllerRequestTest {
     @Mock
     private HumanExposureRepository humanExposureRepository;
 
+    private final ResultsTokens resultsTokens = new ResultsTokens("");
+
     private MockMvc mockMvc;
 
     @BeforeEach
@@ -56,35 +70,50 @@ class LookupControllerRequestTest {
                 auditService,
                 nplBoundaryRepository,
                 resultsPdfService,
-                humanExposureRepository
+                humanExposureRepository,
+                resultsTokens,
+                Clock.fixed(NOW, ZoneOffset.UTC)
         );
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
     @Test
-    void lookup_carriesApproximateMatchToResults() throws Exception {
-        when(geocodingService.geocode(anyString())).thenReturn(new GeocodedAddress(
+    void lookup_redirectsWithOnlyAnEncryptedLinkThatCarriesTheLookup() throws Exception {
+        GeocodedAddress geocoded = new GeocodedAddress(
                 "Woburn, MA", "Woburn, Middlesex County, Massachusetts, United States", "Woburn", "MA", "01801",
-                "nominatim", 42.4793, -71.1523, true, "city"));
+                "nominatim", 42.4793, -71.1523, true, "city");
+        when(geocodingService.geocode(anyString())).thenReturn(geocoded);
+        NplLookupResult result = new NplLookupResult(geocoded, List.of(), null, false);
+        when(nplLookupService.findSitesNear(geocoded)).thenReturn(result);
 
-        String location = mockMvc.perform(post("/lookup").param("address", "Woburn, MA"))
+        String location = mockMvc.perform(post("/lookup").param("address", "  Woburn, MA "))
                 .andExpect(status().is3xxRedirection())
                 .andReturn().getResponse().getRedirectedUrl();
 
-        assertThat(location).contains("state=MA").contains("geocoder=nominatim").contains("approx=city");
+        // No address, coordinates or anything else readable in the URL.
+        assertThat(location).startsWith("/results?r=").doesNotContain("Woburn").doesNotContain("42.4")
+                .doesNotContain("&").doesNotContain("state=").doesNotContain("approx");
+        ResultsLink link = decode(location);
+        assertThat(link).isEqualTo(new ResultsLink("Woburn, Middlesex County, Massachusetts, United States", "Woburn, MA",
+                42.4793, -71.1523, "MA", "nominatim", "city", NOW.getEpochSecond()));
+        // The audit row is written here, once, with the real result.
+        verify(auditService).logLookup(same(geocoded), same(result));
     }
 
     @Test
-    void lookup_streetMatchHasNoApproximateParam() throws Exception {
+    void lookup_houseMatchCarriesNoApproximateLabel() throws Exception {
         when(geocodingService.geocode(anyString())).thenReturn(new GeocodedAddress(
                 "57 Salem St", "57 SALEM ST, WOBURN, MA, 01801", "WOBURN", "MA", "01801",
                 "census", 42.4793, -71.1523, true));
+        when(nplLookupService.findSitesNear(any())).thenReturn(new NplLookupResult(null, List.of(), null, false));
 
         String location = mockMvc.perform(post("/lookup").param("address", "57 Salem St"))
                 .andExpect(status().is3xxRedirection())
                 .andReturn().getResponse().getRedirectedUrl();
 
-        assertThat(location).contains("state=MA").doesNotContain("approx");
+        ResultsLink link = decode(location);
+        assertThat(link.state()).isEqualTo("MA");
+        assertThat(link.approx()).isNull();
     }
 
     @Test
@@ -96,8 +125,12 @@ class LookupControllerRequestTest {
                 .andExpect(status().is3xxRedirection())
                 .andReturn().getResponse().getRedirectedUrl();
 
-        assertThat(location).contains("error=unresolved").doesNotContain("lat=");
+        assertThat(location).startsWith("/results?r=").doesNotContain("Null").doesNotContain("error=");
+        ResultsLink link = decode(location);
+        assertThat(link.unresolved()).isTrue();
+        assertThat(link.raw()).isEqualTo("Null Island");
         verify(auditService).logLookup(any(), argThat(NplLookupResult::unresolved));
+        verify(nplLookupService, never()).findSitesNear(any());
     }
 
     @Test
@@ -107,5 +140,15 @@ class LookupControllerRequestTest {
         assertThat(LookupController.approximateMatchLabel("ZIP code")).isEqualTo("ZIP code");
         assertThat(LookupController.approximateMatchLabel("<script>alert(1)</script>")).isEqualTo("area");
         assertThat(LookupController.approximateMatchLabel("x".repeat(31))).isEqualTo("area");
+    }
+
+    @Test
+    void coordinatesLabel_hasFiveDecimals() {
+        assertThat(LookupController.coordinatesLabel(39.825, -84.0551234)).isEqualTo("39.82500, -84.05512");
+    }
+
+    private ResultsLink decode(String location) {
+        String token = UriComponentsBuilder.fromUri(URI.create(location)).build().getQueryParams().getFirst("r");
+        return resultsTokens.decode(token).orElseThrow();
     }
 }
