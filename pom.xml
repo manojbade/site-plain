@@ -64,6 +64,14 @@
       <groupId>com.openhtmltopdf</groupId>
       <artifactId>openhtmltopdf-pdfbox</artifactId>
       <version>1.0.10</version>
+      <exclusions>
+        <!-- PDFBox logs through the commons-logging API, which spring-jcl provides (routed to Logback).
+             With the real jar on the classpath too, spring-jcl prints a warning at every start. -->
+        <exclusion>
+          <groupId>commons-logging</groupId>
+          <artifactId>commons-logging</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
