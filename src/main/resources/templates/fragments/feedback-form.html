@@ -6,6 +6,11 @@
   <h2 class="tt-section-heading">Was this information helpful?</h2>
   <input type="hidden" name="pageType" th:value="${pageType}"/>
   <input type="hidden" name="epaId" th:value="${epaId}"/>
+  <!--/* Honeypot: hidden from people and assistive technology; a bot that fills it is discarded. */-->
+  <div class="d-none" aria-hidden="true">
+    <label for="feedback-form-website">Leave this field empty</label>
+    <input type="text" id="feedback-form-website" name="website" value="" tabindex="-1" autocomplete="off"/>
+  </div>
   <label class="form-label tt-field-label mb-2" for="feedback-comments">What were you looking for? (optional)</label>
   <textarea id="feedback-comments" name="comments" class="form-control tt-input tt-feedback-textarea mb-3" rows="3" maxlength="500"></textarea>
   <div class="d-flex flex-wrap gap-2">

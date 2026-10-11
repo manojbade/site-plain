@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.siteplain.domain.view.SiteSearchSuggestion;
 import com.siteplain.service.SiteSearchService;
+import com.siteplain.web.advice.GlobalExceptionHandler;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -32,7 +33,9 @@ class SiteSearchControllerTest {
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(new SiteSearchController(siteSearchService)).build();
+        mockMvc = MockMvcBuilders.standaloneSetup(new SiteSearchController(siteSearchService))
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
     }
 
     @Test
@@ -83,5 +86,14 @@ class SiteSearchControllerTest {
         mockMvc.perform(get("/search/sites"))
                 .andExpect(status().is3xxRedirection())
                 .andExpect(header().string("Location", "/"));
+    }
+
+    @Test
+    void queriesOver100Characters_areBadRequests() throws Exception {
+        mockMvc.perform(get("/api/site-search/suggestions").param("q", "x".repeat(101)))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/search/sites").param("q", "x".repeat(101)))
+                .andExpect(status().isBadRequest());
+        org.mockito.Mockito.verifyNoInteractions(siteSearchService);
     }
 }

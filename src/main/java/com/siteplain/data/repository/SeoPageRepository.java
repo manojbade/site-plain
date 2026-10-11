@@ -137,19 +137,25 @@ public class SeoPageRepository {
         return count == null ? 0 : count;
     }
 
+    /** The query as literal text inside a LIKE pattern: %, _ and the escape character itself are escaped. */
+    static String escapeLike(String query) {
+        return query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+    }
+
     public List<SiteSearchSuggestion> searchSuggestions(String query, int limit) {
-        String containsPattern = "%" + query + "%";
-        String prefixPattern = query + "%";
+        String literal = escapeLike(query);
+        String containsPattern = "%" + literal + "%";
+        String prefixPattern = literal + "%";
         return jdbcTemplate.query("""
                 SELECT epa_id, site_name, state_code, exposure_status_label, exposure_status_code
                 FROM site_seo_page_cache
-                WHERE upper(epa_id) LIKE upper(?)
-                   OR lower(site_name) LIKE lower(?)
+                WHERE upper(epa_id) LIKE upper(?) ESCAPE '\\'
+                   OR lower(site_name) LIKE lower(?) ESCAPE '\\'
                 ORDER BY CASE
                     WHEN upper(epa_id) = upper(?) THEN 0
                     WHEN lower(site_name) = lower(?) THEN 1
-                    WHEN upper(epa_id) LIKE upper(?) THEN 2
-                    WHEN lower(site_name) LIKE lower(?) THEN 3
+                    WHEN upper(epa_id) LIKE upper(?) ESCAPE '\\' THEN 2
+                    WHEN lower(site_name) LIKE lower(?) ESCAPE '\\' THEN 3
                     ELSE 4
                   END,
                   abs(length(site_name) - length(?)) ASC,

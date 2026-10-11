@@ -58,7 +58,7 @@ class ShellPagesIntegrationTest {
 
     @AfterEach
     void cleanup() {
-        jdbcTemplate.update("DELETE FROM feedback WHERE comments = ?", COMMENT_MARKER);
+        jdbcTemplate.update("DELETE FROM feedback WHERE comments LIKE ?", COMMENT_MARKER + "%");
     }
 
     @Test
@@ -145,6 +145,66 @@ class ShellPagesIntegrationTest {
     }
 
     @Test
+    void feedbackPost_rejectsWhatAFormCannotSendWithA400AndSavesNothing() throws Exception {
+        int before = feedbackRows();
+        mockMvc.perform(post("/feedback").param("pageType", "x".repeat(21)).param("comments", COMMENT_MARKER))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/feedback").param("pageType", "nosuchpage").param("comments", COMMENT_MARKER))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/feedback").param("pageType", "site").param("epaId", "GA1234567890123456789")
+                        .param("comments", COMMENT_MARKER))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/feedback").param("pageType", "site").param("epaId", "<script>")
+                        .param("comments", COMMENT_MARKER))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/feedback").param("pageType", "general")
+                        .param("comments", COMMENT_MARKER + "x".repeat(500)))
+                .andExpect(status().isBadRequest());
+        assertThat(feedbackRows()).isEqualTo(before);
+    }
+
+    @Test
+    void feedbackPost_countsABrowserLineBreakAsOneCharacter() throws Exception {
+        // 500 characters as the textarea counts them, sent with CRLF line breaks (510 on the wire).
+        String typed = (COMMENT_MARKER + "\n" + "y".repeat(60) + "\n").repeat(5);
+        typed = typed + "z".repeat(500 - typed.length());
+        mockMvc.perform(post("/feedback").param("pageType", "site").param("epaId", "ga1234567890")
+                        .param("comments", typed.replace("\n", "\r\n")))
+                .andExpect(redirectedUrl("/feedback/thanks"));
+
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT page_type, epa_id, comments FROM feedback WHERE comments LIKE ?", COMMENT_MARKER + "%");
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0)).containsEntry("page_type", "site").containsEntry("epa_id", "GA1234567890");
+        assertThat((String) rows.get(0).get("comments")).hasSize(500).doesNotContain("\r");
+    }
+
+    @Test
+    void feedbackPost_discardsBotsThatFillTheHoneypotButStillThanksThem() throws Exception {
+        int before = feedbackRows();
+        mockMvc.perform(post("/feedback")
+                        .param("pageType", "general")
+                        .param("comments", COMMENT_MARKER)
+                        .param("website", "http://spam.example"))
+                .andExpect(redirectedUrl("/feedback/thanks"));
+        assertThat(feedbackRows()).isEqualTo(before);
+
+        // Both forms carry the field, hidden from people and screen readers.
+        assertThat(page("/feedback", 200)).containsPattern(
+                "<div class=\"d-none\" aria-hidden=\"true\">\\s*<label for=\"feedback-website\">Leave this field empty</label>\\s*"
+                        + "<input type=\"text\" id=\"feedback-website\" name=\"website\" value=\"\" tabindex=\"-1\" autocomplete=\"off\">");
+    }
+
+    @Test
+    void lookupPost_overlongOrBlankAddressIsA400WithTheFormError() throws Exception {
+        String html = mockMvc.perform(post("/lookup").param("address", "1 Main St ".repeat(21)))
+                .andExpect(status().isBadRequest())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(html).contains("id=\"lookup-address\"").contains("class=\"text-danger small mt-2\"");
+        mockMvc.perform(post("/lookup").param("address", " ")).andExpect(status().isBadRequest());
+    }
+
+    @Test
     void clientErrors_are4xxPagesWithOneWarnLineAndNoStackTrace(CapturedOutput output) throws Exception {
         String wrongMethod = mockMvc.perform(get("/lookup"))
                 .andExpect(status().isMethodNotAllowed())
@@ -193,6 +253,11 @@ class ShellPagesIntegrationTest {
         assertThat(serverError).doesNotContain("Page not found")
                 .doesNotContain("Not Found")
                 .contains("Site Plain could not finish this request");
+    }
+
+    private int feedbackRows() {
+        Integer count = jdbcTemplate.queryForObject("SELECT count(*) FROM feedback", Integer.class);
+        return count == null ? 0 : count;
     }
 
     private String page(String path, int expectedStatus) throws Exception {

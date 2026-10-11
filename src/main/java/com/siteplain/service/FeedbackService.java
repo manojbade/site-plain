@@ -1,17 +1,14 @@
 package com.siteplain.service;
 
 import com.siteplain.data.repository.FeedbackRepository;
-import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 @Service
 public class FeedbackService {
 
     private static final Logger log = LoggerFactory.getLogger(FeedbackService.class);
-    private static final Pattern SAFE_TEXT = Pattern.compile("[^A-Za-z0-9_-]");
 
     private final FeedbackRepository feedbackRepository;
 
@@ -19,30 +16,13 @@ public class FeedbackService {
         this.feedbackRepository = feedbackRepository;
     }
 
+    /**
+     * Stores feedback the controller has already validated (page type from a fixed list, EPA ID of
+     * up to 20 letters and digits, comments of up to 500 characters). A failed insert propagates,
+     * so the visitor sees an error instead of a thank-you for feedback that was lost.
+     */
     public void save(String pageType, String epaId, Boolean helpful, String comments) {
-        String sanitizedPageType = sanitize(pageType);
-        String sanitizedEpaId = sanitize(epaId);
-        String truncatedComments = truncate(comments, 500);
-        try {
-            feedbackRepository.save(sanitizedPageType, sanitizedEpaId, helpful, truncatedComments);
-            log.info("Feedback: pageType={}, helpful={}", sanitizedPageType, helpful);
-        } catch (DataAccessException ex) {
-            log.warn("Feedback insert failed", ex);
-        }
-    }
-
-    private String sanitize(String value) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        String trimmed = value.trim();
-        return SAFE_TEXT.matcher(trimmed).replaceAll("");
-    }
-
-    private String truncate(String value, int maxLength) {
-        if (value == null) {
-            return null;
-        }
-        return value.length() <= maxLength ? value : value.substring(0, maxLength);
+        feedbackRepository.save(pageType, epaId, helpful, comments);
+        log.info("Feedback: pageType={}, helpful={}", pageType, helpful);
     }
 }

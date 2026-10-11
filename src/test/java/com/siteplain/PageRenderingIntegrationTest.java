@@ -176,6 +176,23 @@ class PageRenderingIntegrationTest {
     }
 
     @Test
+    void results_rejectOverlongParametersWithA400() throws Exception {
+        String[][] overlong = {
+                {"address", "x".repeat(201)}, {"raw", "x".repeat(201)}, {"state", "OHX"},
+                {"geocoder", "x".repeat(21)}, {"approx", "x".repeat(31)}};
+        for (String[] param : overlong) {
+            mockMvc.perform(get("/results").param("lat", "39.825").param("lng", "-84.055")
+                            .param("address", "1 Main St, Dayton, OH").param(param[0], param[1]))
+                    .andExpect(status().isBadRequest());
+            mockMvc.perform(get("/results/pdf").param("lat", "39.825").param("lng", "-84.055")
+                            .param("address", "1 Main St, Dayton, OH").param(param[0], param[1]))
+                    .andExpect(status().isBadRequest());
+        }
+        mockMvc.perform(get("/results").param("error", "unresolved").param("address", "x".repeat(201)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void exposureAsOfDate_isShownOnSiteAndResultsPages() throws Exception {
         String site = mockMvc.perform(get("/site/OHR000000001"))
                 .andExpect(status().isOk())

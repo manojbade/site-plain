@@ -27,6 +27,11 @@
             <form th:action="@{/feedback}" method="post" class="row g-3">
               <input type="hidden" name="pageType" th:value="${pageType}">
               <input type="hidden" name="epaId" th:value="${epaId}" th:if="${epaId != null}">
+              <!--/* Honeypot: hidden from people and assistive technology; a bot that fills it is discarded. */-->
+              <div class="d-none" aria-hidden="true">
+                <label for="feedback-website">Leave this field empty</label>
+                <input type="text" id="feedback-website" name="website" value="" tabindex="-1" autocomplete="off">
+              </div>
 
               <div class="col-12">
                 <fieldset class="sp-choice-group">

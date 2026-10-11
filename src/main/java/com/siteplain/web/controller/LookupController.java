@@ -14,6 +14,7 @@ import com.siteplain.support.DisplayDates;
 import com.siteplain.support.StateNames;
 import com.siteplain.support.StateResourceRegistry;
 import com.siteplain.support.UsCoverageArea;
+import com.siteplain.web.RequestInput;
 import com.siteplain.web.form.AddressLookupForm;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -68,8 +69,11 @@ public class LookupController {
     public String lookup(@Valid @ModelAttribute("lookupForm") AddressLookupForm form,
                          BindingResult bindingResult,
                          Model model,
-                         RedirectAttributes redirectAttributes) {
+                         RedirectAttributes redirectAttributes,
+                         HttpServletResponse response) {
         if (bindingResult.hasErrors()) {
+            // Blank or over 200 characters: the form again, with the field error, as a 400.
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             model.addAttribute("viewModel", HomeController.buildHomePageViewModel(nplBoundaryRepository));
             return "index";
         }
@@ -103,6 +107,8 @@ public class LookupController {
                               @RequestParam(required = false) String error,
                               Model model,
                               HttpServletResponse response) {
+        requireCappedResultParams(address, raw, state, geocoder, approx);
+        RequestInput.maxLength(error, RequestInput.MAX_SHORT_PARAM, "error");
         if ("unresolved".equalsIgnoreCase(error)) {
             model.addAttribute("viewModel", unresolvedViewModel(raw != null ? raw : address, address));
             return "results";
@@ -130,6 +136,7 @@ public class LookupController {
                                                      @RequestParam(required = false) String state,
                                                      @RequestParam(required = false) String geocoder,
                                                      @RequestParam(required = false) String approx) {
+        requireCappedResultParams(address, raw, state, geocoder, approx);
         if (lat == null || lng == null || address == null || !UsCoverageArea.contains(lat, lng)) {
             return ResponseEntity.badRequest().build();
         }
@@ -142,6 +149,14 @@ public class LookupController {
                         .build()
                         .toString())
                 .body(pdf);
+    }
+
+    private static void requireCappedResultParams(String address, String raw, String state, String geocoder, String approx) {
+        RequestInput.maxLength(address, RequestInput.MAX_ADDRESS, "address");
+        RequestInput.maxLength(raw, RequestInput.MAX_ADDRESS, "raw");
+        RequestInput.maxLength(state, RequestInput.MAX_STATE, "state");
+        RequestInput.maxLength(geocoder, RequestInput.MAX_GEOCODER, "geocoder");
+        RequestInput.maxLength(approx, RequestInput.MAX_APPROX, "approx");
     }
 
     private ResultsViewModel buildResolvedViewModel(Double lat,

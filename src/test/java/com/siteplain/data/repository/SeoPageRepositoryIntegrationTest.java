@@ -54,6 +54,25 @@ class SeoPageRepositoryIntegrationTest {
     }
 
     @Test
+    void searchSuggestions_treatsLikeWildcardsAsLiteralText() {
+        insertBoundaryAndSeo("GA1111111111", "Alpha Chemical Site", "GA");
+        insertBoundaryAndSeo("NC3333333333", "Durham 100% Recycling_Yard", "NC");
+
+        assertThat(seoPageRepository.searchSuggestions("%%", 5)).isEmpty();
+        assertThat(seoPageRepository.searchSuggestions("A_pha", 5)).isEmpty();
+        assertThat(seoPageRepository.searchSuggestions("\\", 5)).isEmpty();
+        assertThat(seoPageRepository.searchSuggestions("100%", 5))
+                .extracting(SiteSearchSuggestion::epaId).containsExactly("NC3333333333");
+        assertThat(seoPageRepository.searchSuggestions("ing_ya", 5))
+                .extracting(SiteSearchSuggestion::epaId).containsExactly("NC3333333333");
+    }
+
+    @Test
+    void escapeLike_escapesWildcardsAndTheEscapeCharacter() {
+        assertThat(SeoPageRepository.escapeLike("a%b_c\\d")).isEqualTo("a\\%b\\_c\\\\d");
+    }
+
+    @Test
     void findExactSiteNameMatches_ignoresCase() {
         insertBoundaryAndSeo("GA1111111111", "Alpha Chemical Site", "GA");
 
