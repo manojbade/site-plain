@@ -13,6 +13,10 @@ public class GeocoderProperties {
     private Duration nominatimTimeout = Duration.ofSeconds(20);
     private String censusBenchmark = "Public_AR_Current";
     private int nominatimLimit = 1;
+    /** Geocode cache: most addresses kept, how long a match is reused, how long a definite "no match" is. */
+    private int cacheMaxEntries = 5_000;
+    private Duration cacheTtl = Duration.ofDays(7);
+    private Duration cacheUnresolvedTtl = Duration.ofHours(1);
 
     public String getCensusBaseUrl() {
         return censusBaseUrl;
@@ -68,5 +72,29 @@ public class GeocoderProperties {
 
     public void setNominatimLimit(int nominatimLimit) {
         this.nominatimLimit = nominatimLimit;
+    }
+
+    public int getCacheMaxEntries() {
+        return cacheMaxEntries;
+    }
+
+    public void setCacheMaxEntries(int cacheMaxEntries) {
+        this.cacheMaxEntries = cacheMaxEntries;
+    }
+
+    public Duration getCacheTtl() {
+        return cacheTtl;
+    }
+
+    public void setCacheTtl(Duration cacheTtl) {
+        this.cacheTtl = cacheTtl;
+    }
+
+    public Duration getCacheUnresolvedTtl() {
+        return cacheUnresolvedTtl;
+    }
+
+    public void setCacheUnresolvedTtl(Duration cacheUnresolvedTtl) {
+        this.cacheUnresolvedTtl = cacheUnresolvedTtl;
     }
 }

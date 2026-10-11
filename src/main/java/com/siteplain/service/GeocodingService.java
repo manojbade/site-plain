@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.siteplain.config.GeocoderProperties;
 import com.siteplain.domain.model.GeocodedAddress;
+import com.siteplain.support.ExpiringLruCache;
 import com.siteplain.support.StateNames;
 import java.io.IOException;
 import java.net.URI;
@@ -12,8 +13,12 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
+import java.time.Duration;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Pattern;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -22,30 +27,89 @@ public class GeocodingService {
     // Nominatim place_rank 26 and 27 are streets, 28 to 30 are house numbers and buildings.
     private static final int NOMINATIM_STREET_RANK = 26;
     private static final int NOMINATIM_HOUSE_RANK = 28;
+    private static final Pattern WHITESPACE = Pattern.compile("\\s+");
+    private static final Pattern COMMA = Pattern.compile(" ?, ?");
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final GeocoderProperties geocoderProperties;
+    /**
+     * Normalized address to geocode result, so a repeat lookup or reload of the same address does not
+     * call Census or Nominatim again (Nominatim's usage policy requires caching). In memory only, never
+     * logged, bounded in size and age.
+     */
+    private final ExpiringLruCache<String, GeocodedAddress> cache;
 
+    @Autowired
     public GeocodingService(HttpClient httpClient,
                             ObjectMapper objectMapper,
                             GeocoderProperties geocoderProperties) {
+        this(httpClient, objectMapper, geocoderProperties, Clock.systemUTC());
+    }
+
+    GeocodingService(HttpClient httpClient,
+                     ObjectMapper objectMapper,
+                     GeocoderProperties geocoderProperties,
+                     Clock clock) {
         this.httpClient = httpClient;
         this.objectMapper = objectMapper;
         this.geocoderProperties = geocoderProperties;
+        this.cache = new ExpiringLruCache<>(geocoderProperties.getCacheMaxEntries(), clock);
     }
 
+    /** What one geocoder said: a match, a definite "no match", or no usable answer (network, status, body). */
+    private enum Outcome { MATCH, NO_MATCH, FAILED }
+
+    private record Attempt(Outcome outcome, GeocodedAddress result) {
+        static final Attempt NO_MATCH = new Attempt(Outcome.NO_MATCH, null);
+        static final Attempt FAILED = new Attempt(Outcome.FAILED, null);
+
+        static Attempt of(GeocodedAddress result) {
+            return result == null ? NO_MATCH : new Attempt(Outcome.MATCH, result);
+        }
+    }
+
+    /** Census first, then Nominatim. A cached answer makes no outbound call. */
     public GeocodedAddress geocode(String rawAddress) {
         String address = stripCountrySuffix(rawAddress);
-        GeocodedAddress census = geocodeWithCensus(address);
-        if (census != null) {
-            return census;
+        String key = cacheKey(address);
+        GeocodedAddress cached = key == null ? null : cache.get(key);
+        if (cached != null) {
+            return cached.resolved() ? cached : GeocodedAddress.unresolved(rawAddress);
         }
-        GeocodedAddress nominatim = geocodeWithNominatim(address);
-        if (nominatim != null) {
-            return nominatim;
+        Attempt census = geocodeWithCensus(address);
+        if (census.outcome() == Outcome.MATCH) {
+            return remember(key, census.result(), geocoderProperties.getCacheTtl());
         }
-        return GeocodedAddress.unresolved(rawAddress);
+        Attempt nominatim = geocodeWithNominatim(address);
+        if (nominatim.outcome() == Outcome.MATCH) {
+            return remember(key, nominatim.result(), geocoderProperties.getCacheTtl());
+        }
+        GeocodedAddress unresolved = GeocodedAddress.unresolved(rawAddress);
+        // Only a definite "no match" from both is remembered, and briefly; a failed call is retried next time.
+        if (census.outcome() == Outcome.NO_MATCH && nominatim.outcome() == Outcome.NO_MATCH) {
+            remember(key, unresolved, geocoderProperties.getCacheUnresolvedTtl());
+        }
+        return unresolved;
+    }
+
+    private GeocodedAddress remember(String key, GeocodedAddress result, Duration ttl) {
+        if (key != null && !ttl.isZero() && !ttl.isNegative()) {
+            cache.put(key, result, ttl);
+        }
+        return result;
+    }
+
+    /**
+     * Cache key for an address: case, runs of whitespace, and spacing around commas do not change what
+     * the geocoders return, so "57  Salem St ,Woburn" and "57 salem st, woburn" share an entry.
+     */
+    static String cacheKey(String address) {
+        if (address == null || address.isBlank()) {
+            return null;
+        }
+        String spaced = WHITESPACE.matcher(address.trim()).replaceAll(" ");
+        return COMMA.matcher(spaced).replaceAll(", ").trim().toLowerCase(Locale.ROOT);
     }
 
     private String stripCountrySuffix(String address) {
@@ -59,7 +123,7 @@ public class GeocodingService {
         return trimmed;
     }
 
-    private GeocodedAddress geocodeWithCensus(String rawAddress) {
+    private Attempt geocodeWithCensus(String rawAddress) {
         try {
             String url = geocoderProperties.getCensusBaseUrl()
                     + "?benchmark=" + URLEncoder.encode(geocoderProperties.getCensusBenchmark(), StandardCharsets.UTF_8)
@@ -70,14 +134,20 @@ public class GeocodingService {
                     .GET()
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                return Attempt.FAILED;
+            }
             JsonNode root = objectMapper.readTree(response.body());
             JsonNode matches = root.path("result").path("addressMatches");
-            if (!matches.isArray() || matches.isEmpty()) {
-                return null;
+            if (!matches.isArray()) {
+                return Attempt.FAILED;
+            }
+            if (matches.isEmpty()) {
+                return Attempt.NO_MATCH;
             }
             JsonNode best = matches.get(0);
             JsonNode components = best.path("addressComponents");
-            return new GeocodedAddress(
+            return Attempt.of(new GeocodedAddress(
                     rawAddress,
                     best.path("matchedAddress").asText(rawAddress),
                     text(components, "city"),
@@ -87,13 +157,16 @@ public class GeocodingService {
                     number(best.path("coordinates"), "y"),
                     number(best.path("coordinates"), "x"),
                     true
-            );
-        } catch (IOException | InterruptedException ex) {
-            return null;
+            ));
+        } catch (IOException | InterruptedException | IllegalArgumentException ex) {
+            if (ex instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            return Attempt.FAILED;
         }
     }
 
-    private GeocodedAddress geocodeWithNominatim(String rawAddress) {
+    private Attempt geocodeWithNominatim(String rawAddress) {
         try {
             String url = geocoderProperties.getNominatimBaseUrl()
                     + "?format=jsonv2&limit=" + geocoderProperties.getNominatimLimit()
@@ -104,9 +177,19 @@ public class GeocodingService {
                     .GET()
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            return parseNominatim(objectMapper.readTree(response.body()), rawAddress);
-        } catch (IOException | InterruptedException ex) {
-            return null;
+            if (response.statusCode() != 200) {
+                return Attempt.FAILED;
+            }
+            JsonNode root = objectMapper.readTree(response.body());
+            if (!root.isArray()) {
+                return Attempt.FAILED;
+            }
+            return Attempt.of(parseNominatim(root, rawAddress));
+        } catch (IOException | InterruptedException | IllegalArgumentException ex) {
+            if (ex instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            return Attempt.FAILED;
         }
     }
 
