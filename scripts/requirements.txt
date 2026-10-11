@@ -1,0 +1,9 @@
+# Converter dependencies (scripts/convert_npl_to_geojson.py), pinned to the versions the July 2026
+# release was built and verified with: Python 3.9.6, GDAL 3.10.3 (bundled in the pyogrio wheel),
+# GEOS 3.11.4 (shapely wheel), PROJ 9.3.0 (pyproj wheel). Setup: docs/data/README.md, "Converter setup".
+geopandas==1.0.1
+pyogrio==0.11.1
+shapely==2.0.7
+pandas==2.3.3
+numpy==2.0.2
+pyproj==3.6.1

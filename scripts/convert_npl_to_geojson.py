@@ -48,13 +48,14 @@ outside --min-final..--max-final, or when the union review gate fails. The
 first two catch broken EPA releases such as the 2026-10-10 EDG file (239 null
 STATE_CODE and 113 null NPL_STATUS_CODE rows).
 
-Usage:
-    pip install geopandas pyogrio
-    python3 scripts/convert_npl_to_geojson.py [--gdb PATH] [--output PATH]
-    python3 scripts/convert_npl_to_geojson.py --self-test
+Usage (Python 3.9 to 3.12, in a venv; see docs/data/README.md, "Converter setup"):
+    python -m pip install --only-binary=:all: -r scripts/requirements.txt
+    python scripts/convert_npl_to_geojson.py --gdb PATH/NPL_Boundaries.gdb [--output PATH]
+    python scripts/convert_npl_to_geojson.py --self-test
 
 Output file (default): scripts/npl_site_boundaries.geojson
-Upload that file to GitHub releases and set SITEPLAIN_DATA_NPL_BOUNDARIES_URL accordingly.
+Publish it as a new GitHub release and point SITEPLAIN_DATA_NPL_BOUNDARIES_URL at the asset
+(docs/data/README.md, "Publish and load a new boundary release").
 """
 
 import argparse
@@ -357,10 +358,10 @@ def convert(gdb_path, output_path, min_final, max_final, max_null_rate, union_re
     size_mb = output_path.stat().st_size / (1024 * 1024)
     print(f"Done. {output_path} ({size_mb:.1f} MB)")
     print()
-    print("Next steps:")
-    print("  1. Upload npl_site_boundaries.geojson to GitHub releases")
-    print("  2. Set SITEPLAIN_DATA_NPL_BOUNDARIES_URL to the release asset URL in Railway")
-    print("  3. Set SITEPLAIN_DATA_BOOTSTRAP_ENABLED=true on first deploy")
+    print("Next steps (docs/data/README.md, 'Publish and load a new boundary release'):")
+    print("  1. Compare it with the live release")
+    print("  2. Publish it as a new GitHub release (new tag data-YYYY-MM-DD; never replace an asset)")
+    print("  3. Set SITEPLAIN_DATA_NPL_BOUNDARIES_URL to the new asset URL; that change alone reloads it")
 
 
 def self_test():
