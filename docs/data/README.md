@@ -2,7 +2,7 @@
 
 Every dataset the app loads, how it gets into the database, how to tell what is live, and how to refresh, roll back and recover it. One page per source lives in [sources/](sources/). Running the app (environment variables, token key, security headers, rate limits, healthcheck, memory, backups) is in [../operations.md](../operations.md).
 
-Last verified: October 11, 2026, against commit 48cb5b7, a restore of the 2026-10-10 prod database, the local jar, and a local file server standing in for GitHub releases and EPA. Every command and query below was run in that setup unless it says otherwise. Railway and GitHub write commands (`railway variable set`, `gh release create`) were checked against the CLI help only.
+Last verified: October 11, 2026, against commit 48cb5b7, a restore of the 2026-10-10 prod database, the local jar, and a local file server standing in for GitHub releases and EPA. Every command and query below was run in that setup unless it says otherwise. Sections 3.4, 4.2 steps 0 to 3, 6 and 7 were re-checked the same day after they were rewritten. Railway and GitHub write commands (`railway variable set`, `gh release create`) were checked against the CLI help only.
 
 Contents:
 
@@ -125,7 +125,7 @@ Startup rebuilds the caches every time because a new app version can change how 
 
 A database that had boundaries before migration V7 has no record of where they came from. On the first boot with V7, the app records the configured `SITEPLAIN_DATA_NPL_BOUNDARIES_URL` as their source without downloading anything (`last_status = ADOPTED`, `sha256` and `bytes` empty until the next real load, `loaded_at` = when the live rows were loaded) and logs `Adopted <url> as the source of the <n> live NPL boundaries (loaded <time>) without reloading them`.
 
-Adoption trusts the configured URL; it cannot tell which file the live rows came from. **Do not change `SITEPLAIN_DATA_NPL_BOUNDARIES_URL` in the deploy that first applies V7.** If you do, the new URL is recorded as the source of the old rows and never loaded. Change it in a later deploy, or set `SITEPLAIN_DATA_REFRESH_ON_STARTUP=true` for that one boot.
+Adoption trusts the configured URL; it cannot tell which file the live rows came from. To find out which release they really are, use [3.4](#34-which-release-the-live-boundaries-are). **Do not change `SITEPLAIN_DATA_NPL_BOUNDARIES_URL` in the deploy that first applies V7.** If you do, the new URL is recorded as the source of the old rows and never loaded. Change it in a later deploy, or set `SITEPLAIN_DATA_REFRESH_ON_STARTUP=true` for that one boot.
 
 ### 2.8 Independent sources and failures
 
@@ -165,6 +165,7 @@ FROM data_source_state ORDER BY dataset;
 Reading it:
 
 - The live boundary release is `source_url` of `npl_boundaries`. Its `sha256` should equal the release asset's digest: `gh release view <tag> --repo manojbade/site-plain --json assets --jq '.assets[] | select(.name=="npl_site_boundaries.geojson") | .digest'` prints `sha256:<hex>`.
+- **`ADOPTED` with an empty `sha256` and `bytes`** (the first boot after V7, [2.7](#27-adoption-on-the-first-v7-boot)) means `source_url` is only the URL that was configured at that boot. Identify the rows with [3.4](#34-which-release-the-live-boundaries-are).
 - **`FAILED` describes the last attempt, not the live data.** A boundary row with `last_status = FAILED` still has the identity of the file that is live. It stays `FAILED` after you fix the cause by restoring the old URL (a `KEEP` updates nothing); it changes on the next real load. Compare `source_url` with the configured URL: if they are equal, the live data is that URL's file and the `last_error` is history.
 - The boundary row is not touched by a `KEEP`, so its `last_checked_at` is the last reload, adoption or failed attempt. The exposure row's `last_checked_at` moves on every startup and daily run that downloaded the feed.
 
@@ -194,7 +195,29 @@ Railway keeps deploy logs per deployment; to read the refresh lines of the curre
 | Home "Trust and limits" and About "Data sources" | `loaded <date>` after each EPA dataset | Same boundary date; for exposure, date of `max(loaded_at)` in `npl_human_exposure`, which moves only when a changed feed was swapped in |
 | Site page, results page, results PDF | `EPA exposure status as of <date>` | EPA's `Last-Modified` for the live feed (`data_source_state.last_modified`) as an America/New_York date; if none was recorded, `max(loaded_at)` of `npl_human_exposure`, also as an Eastern date |
 
-So the boundary date tells you when the live release was loaded, not which release it is; use `data_source_state` for that.
+So the boundary date tells you when the live release was loaded, not which release it is; use `data_source_state` for that, or 3.4.
+
+### 3.4 Which release the live boundaries are
+
+After a real load, `data_source_state` answers this: `source_url` plus a `sha256` equal to that release's digest ([section 7](#7-release-retention)). After adoption it does not: `sha256` is empty and `source_url` is whatever was configured. The counts of [section 6](#6-verification) do not help either: every release so far has 1,908 rows, 1,328 Final and the same status mix. Use one of these.
+
+**A. Geometry fingerprint** (read-only, no deploy; on prod it needs a SQL session, [6.2](#62-sql-checks)):
+
+```sql
+-- The two sites whose geometry differs between the releases.
+SELECT epa_id, round((st_area(geom::geography) / 1e6)::numeric, 3) AS km2
+FROM npl_site_boundaries WHERE epa_id IN ('ORSFN1002155', 'WA0002329803') ORDER BY epa_id;
+-- Every row's geometry in one value (about 0.2 s).
+SELECT count(*) AS rows,
+       left(md5(string_agg(epa_id || ':' || md5(ST_AsBinary(geom)), ',' ORDER BY epa_id)), 12) AS geometry_fingerprint
+FROM npl_site_boundaries;
+```
+
+Look the result up in the release table of [section 7](#7-release-retention). The fingerprint depends only on the file, not on the app version that loaded it: the prod rows loaded on 2026-07-13 by the pre-October image and a load of the same file by the current image both give `3d43898d4fc4`. A release built with the current converter, which unions tied rows, shows about 18.190 and 5.240 km2 for the two sites ([source 01](sources/01-epa-npl-boundaries.md)); none is published yet. A fingerprint that matches no listed release means the rows came from no published file (hand edits, a local load): reload with B.
+
+**B. Reload once and let the app record the SHA-256** (needs only the deploy logs). Set `SITEPLAIN_DATA_REFRESH_ON_STARTUP=true` for one boot ([4.3](#43-force-a-re-download-of-the-same-url)). That boot downloads the file at `source_url` again, logs `Downloaded NPL boundary file from <url>: <bytes> bytes in <ms> ms, sha256 <hex>, ...` and records it with `LOADED`, so from then on the live rows are that file by construction. It costs one deploy and about 5 s of loading. If the file differs a lot from the adopted rows the 5% gate rejects it and the adopted rows stay: that difference is itself the answer, and A tells you what they are.
+
+Drill (October 11, 2026, restore of the 2026-10-10 prod dump): before V7 the two areas were 0.013 and 0.014 km2 and the fingerprint `3d43898d4fc4`, which is `data-2026-07-12`. After the first V7 boot (`ADOPTED`, empty `sha256`) A gave the same values; after one boot with B, the row showed `LOADED` with `3914ed30...7e48` and the fingerprint was unchanged.
 
 ---
 
@@ -221,7 +244,7 @@ Flags:
 | Flag | Default | Meaning |
 |---|---|---|
 | `--gdb PATH` | `/Users/manojbade/workspace/Info/superfund/superfund_audit_data/NPL_Boundaries/NPL_Boundaries.gdb` | The extracted `NPL_Boundaries.gdb` directory. Always pass it on another machine |
-| `--output PATH` | `scripts/npl_site_boundaries.geojson` (gitignored) | Where to write the GeoJSON. Keep the file name `npl_site_boundaries.geojson`: it becomes the release asset name and the file's own `"name"` member, so another name changes the bytes and the SHA-256 |
+| `--output PATH` | `scripts/npl_site_boundaries.geojson` (gitignored) | Where to write the GeoJSON. Always pass it, pointing into the dated `$GDB_DIR` of [4.2](#42-publish-and-load-a-new-boundary-release): the default path overwrites without asking, and a checkout may keep a copy of a live release there. Keep the file name `npl_site_boundaries.geojson`: it becomes the release asset name and the file's own `"name"` member, so another name changes the bytes and the SHA-256 |
 | `--min-final`, `--max-final` | 1200, 1450 | Accepted Final site count |
 | `--max-null-rate` | 0.005 | Largest share of raw rows with a blank `EPA_ID`, `NPL_STATUS_CODE` or `STATE_CODE` |
 | `--union-review-km2` | 2.0 | Union review gate size (see [source 01](sources/01-epa-npl-boundaries.md#union-review-gate)) |
@@ -231,8 +254,26 @@ On any failed check the script prints `ERROR: input check failed, nothing writte
 
 ### 4.2 Publish and load a new boundary release
 
-Do this when EPA publishes boundaries you want (roughly yearly; the set of sites changes rarely) or when the converter changes. Before you start: `gh auth status` is logged in, the git tree is clean on `main`, and the current release is noted (`SELECT source_url, sha256 FROM data_source_state WHERE dataset = 'npl_boundaries';` on prod, or `railway variable list --service site-plain --kv | grep '^SITEPLAIN_DATA_NPL_BOUNDARIES_URL='`).
+Do this when EPA publishes boundaries you want (roughly yearly; the set of sites changes rarely) or when the converter changes. Before you start: `gh auth status` is logged in, the git tree is clean on `main`, and you know the live tag (`railway variable list --service site-plain --kv | grep '^SITEPLAIN_DATA_NPL_BOUNDARIES_URL='`; the tag is the path segment after `/download/`).
 
+Every file in this procedure lives outside the repository: the new GeoJSON in a dated `$GDB_DIR`, and the copies of published releases in the release archive of [section 7](#7-release-retention). Nothing is written to `scripts/`.
+
+0. **Check the copy of the live release** in the archive, so that step 3 has something to compare with and [5.3](#53-dead-or-broken-url) has something to re-publish:
+   ```bash
+   ARCHIVE=~/workspace/Info/superfund/site-plain-releases
+   LIVE_TAG=data-2026-07-12                       # the live tag
+   (cd "$ARCHIVE" && shasum -a 256 -c SHA256SUMS)  # every line ends "OK"
+   grep "$LIVE_TAG/" "$ARCHIVE/SHA256SUMS"
+   gh release view "$LIVE_TAG" --repo manojbade/site-plain --json assets \
+     --jq '.assets[] | select(.name=="npl_site_boundaries.geojson") | .digest'
+   ```
+   The `SHA256SUMS` line for `$LIVE_TAG` and GitHub's `sha256:<hex>` must be the same value, and it must match the table in section 7. If the archive has no copy of the live tag, make one before going on and check it the same way:
+   ```bash
+   mkdir -p "$ARCHIVE/$LIVE_TAG"
+   curl -fsSL -o "$ARCHIVE/$LIVE_TAG/npl_site_boundaries.geojson" \
+     "https://github.com/manojbade/site-plain/releases/download/$LIVE_TAG/npl_site_boundaries.geojson"
+   (cd "$ARCHIVE" && shasum -a 256 "$LIVE_TAG/npl_site_boundaries.geojson" >> SHA256SUMS)
+   ```
 1. **Download the GDB** into a fresh directory and note EDG's `Last-Modified` (it goes in the release notes):
    ```bash
    GDB_DIR=~/npl-gdb/$(date +%F)
@@ -242,18 +283,17 @@ Do this when EPA publishes boundaries you want (roughly yearly; the set of sites
    unzip -oq NPL_Boundaries.zip     # creates NPL_Boundaries.gdb/
    ```
    On 2026-10-11 the zip at that URL was still the broken 2026-10-10 file (`last-modified: Sat, 10 Oct 2026 08:46:47 GMT`); step 2 rejects it. The July 2026 GDB is kept at `/Users/manojbade/workspace/Info/superfund/superfund_audit_data/NPL_Boundaries/NPL_Boundaries.gdb`.
-2. **Convert** (about 6 s):
+2. **Convert** into `$GDB_DIR` (about 6 s):
    ```bash
    cd ~/workspace/site-plain
    ~/.venvs/site-plain-converter/bin/python scripts/convert_npl_to_geojson.py \
-     --gdb "$GDB_DIR/NPL_Boundaries.gdb" --output scripts/npl_site_boundaries.geojson
-   shasum -a 256 scripts/npl_site_boundaries.geojson
+     --gdb "$GDB_DIR/NPL_Boundaries.gdb" --output "$GDB_DIR/npl_site_boundaries.geojson"
+   shasum -a 256 "$GDB_DIR/npl_site_boundaries.geojson"
    ```
    Expect about 2,114 raw features, 3 dropped source-control rows, about 1,908 unique sites, 19 tied sites unioned, 6 reviewed oversized unions and `Final NPL sites (status='F'): 1328` (July 2026 figures). `organizePolygons() received a polygon with more than 100 parts` warnings are harmless. If the union review gate fails, check the named site against EPA's site description before adding it to `REVIEWED_UNIONS` (a code change: commit it).
-3. **Compare with the live release** (about 5 s download, 3 s compare):
+3. **Compare with the live release** (about 3 s, no download: the old side is the archive copy checked in step 0):
    ```bash
-   curl -fsSL -o "$GDB_DIR/old.geojson" "<current SITEPLAIN_DATA_NPL_BOUNDARIES_URL>"
-   python3 - "$GDB_DIR/old.geojson" scripts/npl_site_boundaries.geojson <<'PY'
+   python3 - "$ARCHIVE/$LIVE_TAG/npl_site_boundaries.geojson" "$GDB_DIR/npl_site_boundaries.geojson" <<'PY'
    import hashlib, json, sys
    def load(path):
        out = {}
@@ -276,26 +316,28 @@ Do this when EPA publishes boundaries you want (roughly yearly; the set of sites
    PY
    ```
    July 2026 release against the re-converted July GDB: 0 added, 0 removed, 0 attribute changes, 43 geometry changes (19 unions plus 24 repaired geometries). A Final count that moves more than 5%, or many added and removed IDs, will trip the load gates; find out why before publishing.
-4. **Publish a release.** Name it `data-YYYY-MM-DD` with the date you publish (add `-2` for a second one that day). Never reuse a tag and never replace the asset of an existing release (see [section 7](#7-release-retention)).
+4. **Publish a release and archive it.** Name it `data-YYYY-MM-DD` with the date you publish (add `-2` for a second one that day). Never reuse a tag and never replace the asset of an existing release (see [section 7](#7-release-retention)). The asset takes the file's base name, so publish straight from `$GDB_DIR`:
    ```bash
-   gh release create data-YYYY-MM-DD scripts/npl_site_boundaries.geojson \
+   NEW_TAG=data-YYYY-MM-DD
+   gh release create "$NEW_TAG" "$GDB_DIR/npl_site_boundaries.geojson" \
      --repo manojbade/site-plain --title "NPL boundary data YYYY-MM-DD" \
      --notes "EPA NPL Superfund Site Boundaries, converted from NPL_Boundaries.gdb (SITE_BOUNDARIES_SF, EDG Last-Modified <date>) with scripts/convert_npl_to_geojson.py at commit <git rev-parse --short HEAD>.
    - <unique sites> sites, <Final> Final. SHA-256 <hex>.
-   - Change from <previous tag>: <output of step 3>.
+   - Change from $LIVE_TAG: <output of step 3>.
    Source: https://edg.epa.gov/data/PUBLIC/OLEM/OLEM-OSRTI/NPL_Boundaries.zip"
+   curl -fsSL "https://github.com/manojbade/site-plain/releases/download/$NEW_TAG/npl_site_boundaries.geojson" | shasum -a 256   # same SHA-256 as step 2
+   mkdir -p "$ARCHIVE/$NEW_TAG" && cp -p "$GDB_DIR/npl_site_boundaries.geojson" "$ARCHIVE/$NEW_TAG/"
+   (cd "$ARCHIVE" && shasum -a 256 "$NEW_TAG/npl_site_boundaries.geojson" >> SHA256SUMS && shasum -a 256 -c SHA256SUMS)
    ```
-   The asset URL is `https://github.com/manojbade/site-plain/releases/download/data-YYYY-MM-DD/npl_site_boundaries.geojson`. Check it before using it (expect the same SHA-256 as step 2):
-   ```bash
-   curl -fsSL https://github.com/manojbade/site-plain/releases/download/data-YYYY-MM-DD/npl_site_boundaries.geojson | shasum -a 256
-   ```
+   The asset URL is `https://github.com/manojbade/site-plain/releases/download/data-YYYY-MM-DD/npl_site_boundaries.geojson`.
 5. **Point the app at it.** Nothing else is needed: the changed URL alone triggers one reload. Setting the variable starts a deployment.
    ```bash
    railway variable set SITEPLAIN_DATA_NPL_BOUNDARIES_URL=https://github.com/manojbade/site-plain/releases/download/data-YYYY-MM-DD/npl_site_boundaries.geojson --service site-plain
    ```
    Not during the first deploy of V7 ([2.7](#27-adoption-on-the-first-v7-boot)), and not around 08:30 UTC ([2.2](#22-the-advisory-lock)).
 6. **Watch the deploy logs** for, in order: `NPL boundaries: RELOAD (SITEPLAIN_DATA_NPL_BOUNDARIES_URL changed from <old>)`, `Downloaded NPL boundary file from <url>: <bytes> bytes ..., sha256 <hex>`, `NPL boundaries loaded into staging: <n> rows, <n> Final`, `Data refresh done in a <n> ms swap. Boundaries reloaded (<n> rows) ...`. A rejected or unreachable file logs `NPL boundary file refresh failed; keeping the live data: <reason>` and the old boundaries stay live: fix the file or go back to the old URL ([5.3](#53-dead-or-broken-url)).
-7. **Verify** ([section 6](#6-verification)): `data_source_state` shows the new URL and the SHA-256 from step 2 with `last_status = LOADED`.
+7. **Verify from the logs** ([6.1](#61-prod-check-from-the-deploy-logs)): the `sha256` in the `Downloaded` line equals step 2 and the GitHub digest, the swap line says `Boundaries reloaded (<unique sites from step 2> rows)`, and the live-site checks pass. That is the complete prod check. The SQL of [6.2](#62-sql-checks) (`data_source_state` showing the new URL and SHA-256 with `LOADED`) is optional on prod because it needs the plaintext TCP proxy.
+8. **Update [section 7](#7-release-retention)**: add the new tag to the release table (size and SHA-256 from step 2; the fingerprint values of [3.4](#34-which-release-the-live-boundaries-are) if you have a SQL session on a database that loaded it), mark it live, mark `$LIVE_TAG` as previous. Commit the doc change.
 
 ### 4.3 Force a re-download of the same URL
 
@@ -379,7 +421,7 @@ Recovery, either:
 - Fix the source: publish a good release under a **new** tag and set the URL to it ([4.2](#42-publish-and-load-a-new-boundary-release), steps 4 to 7).
 - Or go back to the URL that is live: set `SITEPLAIN_DATA_NPL_BOUNDARIES_URL` to the `source_url` in `data_source_state` (the release that is actually loaded). The next boot logs `KEEP` and downloads nothing. `last_status` stays `FAILED` with the old error until the next real load; that is expected ([3.1](#31-data_source_state)).
 
-If the live release itself was deleted from GitHub, nothing breaks until the next reload of that URL (a forced re-download, or an empty database). Re-publish the same file under a new tag (keep a local copy, [section 7](#7-release-retention)) and point the URL at it.
+If the live release itself was deleted from GitHub, nothing breaks until the next reload of that URL (a forced re-download, or an empty database). Re-publish the archived copy under a new tag and point the URL at it: check it first with `(cd ~/workspace/Info/superfund/site-plain-releases && shasum -a 256 -c SHA256SUMS)`, then run [4.2](#42-publish-and-load-a-new-boundary-release) steps 4 to 7 with `$GDB_DIR` replaced by `~/workspace/Info/superfund/site-plain-releases/<deleted tag>` (skip the archive copy in step 4; it is already there). The re-published file has the same SHA-256 as the deleted one.
 
 The exposure URL fails the same way (`Human exposure feed refresh failed; keeping the live data: ...`) and needs no action for a short EPA outage: the live rows stay and the next run retries. If EPA moves the feed, set `SITEPLAIN_DATA_HUMAN_EXPOSURE_URL` to the new location.
 
@@ -399,7 +441,52 @@ If Postgres loses its data (today a Postgres restart does, see the owner actions
 
 ## 6. Verification
 
-Run on the database after any load, rollback or recovery. Values are from the drill database after loading the July 2026 release and the 2026-10-10 feed. On prod, `railway connect postgres-postgis` opens psql (it goes through the database's public TCP proxy; see the owner actions in [operations](../operations.md#owner-actions)); it was not run here.
+After any load, rollback or recovery. On prod, 6.1 is the check: it needs only the deploy logs and `curl`. The SQL of 6.2 is what to run locally and in drills; on prod it is optional, because the only way in is the Postgres TCP proxy, which is plaintext and stays disabled ([owner action 3](../operations.md#owner-actions)).
+
+### 6.1 Prod check from the deploy logs
+
+For the deployment that did the load (`railway logs` defaults to the latest successful deployment; pass its ID for an older one):
+
+```bash
+railway logs --service site-plain --deployment --lines 300 --filter "NPL"
+railway logs --service site-plain --deployment --lines 300 --filter "Data refresh"
+gh release view <tag> --repo manojbade/site-plain --json assets \
+  --jq '.assets[] | select(.name=="npl_site_boundaries.geojson") | .digest'
+```
+
+Pass when:
+
+- `Downloaded NPL boundary file from <the release URL>: <bytes> bytes in <ms> ms, sha256 <hex>, ...`: the `<hex>` equals GitHub's digest and the release table in [section 7](#7-release-retention) (`data-2026-07-12`: 57,800,609 bytes, `3914ed30...7e48`).
+- `NPL boundaries loaded into staging: 1908 rows, 1328 Final` and `Data refresh done in a <n> ms swap. Boundaries reloaded (1908 rows), exposure .... SEO pages: 1337, State pages: 53` (figures for `data-2026-07-12` and the 2026-10-10 feed).
+- No `NPL boundary file refresh failed` line after them, and the live-site checks below pass.
+
+A deployment that only logs `NPL boundaries: KEEP (...)` downloaded nothing: its logs prove the configured URL equals the recorded source, not which file the rows hold. That proof is in the logs of the deployment that did the reload. Railway keeps logs per deployment, not forever; for adopted rows, or once those logs are gone, use [3.4](#34-which-release-the-live-boundaries-are) B to produce a fresh `Downloaded` line. The `railway logs` flags are from the railway CLI 4.58 help and were not run against prod; the log lines were checked on the local jar.
+
+Live site (read-only GETs; expected output on the right):
+
+```bash
+curl -s https://site-plain.com/actuator/health/readiness                                  # {"status":"UP"}
+curl -s https://site-plain.com/actuator/health                                            # {"status":"UP","groups":["liveness","readiness"]}
+curl -s https://site-plain.com/site/GAD990855074 | grep -o 'EPA exposure status as of [A-Za-z]* [0-9]*, [0-9]*'
+curl -s -o /dev/null -w '%{http_code}\n' https://site-plain.com/site/WA2170023418          # 200: a site with no boundary has a page
+curl -s "https://site-plain.com/api/site-search/suggestions?q=firestone" | head -c 200      # JSON naming GAD990855074
+curl -s https://site-plain.com/sitemap.xml | grep -o '<loc>' | wc -l                        # 1392 (active sites + states + fixed pages)
+curl -s https://site-plain.com/ | grep -o 'loaded [A-Z][a-z]* [0-9]*, [0-9]*'             # the two load dates of 3.3
+```
+
+Then do one address lookup in a browser (a `curl` POST to `/lookup` without an `Origin` header is refused with 403 by design).
+
+### 6.2 SQL checks
+
+Values are from the drill database after loading the July 2026 release and the 2026-10-10 feed. Locally, run them with `psql` against the database the jar uses.
+
+On prod, only when the logs cannot answer (for example [3.4](#34-which-release-the-live-boundaries-are) A), and as one short session:
+
+1. Railway dashboard, `postgres-postgis` service, Settings, Networking: enable the TCP Proxy.
+2. `railway connect postgres-postgis` opens psql through it. The server runs with `ssl=off`, so the session, password included, crosses the internet in plaintext: run only the read-only queries below, never `SELECT` from `feedback` or `lookup_audit`, and quit.
+3. Back in the same settings panel, remove the TCP Proxy, and check that `railway connect postgres-postgis` no longer connects.
+
+The dashboard steps were not run here; the setting names may differ in Railway's current UI.
 
 ```sql
 -- 1. What is live and how the last attempt went (see 3.1).
@@ -446,28 +533,26 @@ WHERE epa_id IN ('GAD990855074', 'WA2170023418') ORDER BY epa_id;
 
 `GAD990855074` is Firestone Tire & Rubber Co. (Albany Plant), GA. Older notes used `GA8213820731`, which is not in EPA's data.
 
-Live site (read-only GETs; expected output on the right):
-
-```bash
-curl -s https://site-plain.com/actuator/health/readiness                                  # {"status":"UP"}
-curl -s https://site-plain.com/actuator/health                                            # {"status":"UP","groups":["liveness","readiness"]}
-curl -s https://site-plain.com/site/GAD990855074 | grep -o 'EPA exposure status as of [A-Za-z]* [0-9]*, [0-9]*'
-curl -s -o /dev/null -w '%{http_code}\n' https://site-plain.com/site/WA2170023418          # 200: a site with no boundary has a page
-curl -s "https://site-plain.com/api/site-search/suggestions?q=firestone" | head -c 200      # JSON naming GAD990855074
-curl -s https://site-plain.com/sitemap.xml | grep -o '<loc>' | wc -l                        # 1392 (active sites + states + fixed pages)
-curl -s https://site-plain.com/ | grep -o 'loaded [A-Z][a-z]* [0-9]*, [0-9]*'             # the two load dates of 3.3
-```
-
-Then do one address lookup in a browser (a `curl` POST to `/lookup` without an `Origin` header is refused with 403 by design).
-
 ---
 
 ## 7. Release retention
 
+Published releases (the asset is always `npl_site_boundaries.geojson`; SHA-256 and size are GitHub's `digest` and `size`, equal to the archive copies; the last two columns are the [3.4](#34-which-release-the-live-boundaries-are) A values):
+
+| Tag | Published | Role | Bytes | SHA-256 | ORSFN1002155 / WA0002329803 km2 | Geometry fingerprint |
+|---|---|---|---|---|---|---|
+| `data-2026-07-12` | 2026-07-13 00:31 UTC | **live** (prod rows loaded 2026-07-13 00:36 UTC) | 57,800,609 | `3914ed309daba1b3a26b494b851b0b0626d28780e71cc85f33ce272a2ca67e48` | 0.013 / 0.014 | `3d43898d4fc4` |
+| `data-v1` | 2026-03-23 20:58 UTC | previous (rollback target) | 57,821,970 | `a2afb167dc8ce03d1abb7fb9903b32235fd74c3adcdcb378d2f1227c74d18069` | 0.243 / 0.002 | `18242cae88ea` |
+
+Both have 1,908 sites and 1,328 Final with the same status mix; only the geometry tells them apart.
+
+**Local archive.** A copy of every release in the table is kept at `~/workspace/Info/superfund/site-plain-releases/<tag>/npl_site_boundaries.geojson` (outside any git repository), with their SHA-256 values in `~/workspace/Info/superfund/site-plain-releases/SHA256SUMS`. Check it with `(cd ~/workspace/Info/superfund/site-plain-releases && shasum -a 256 -c SHA256SUMS)`. It is on this laptop only: GitHub is the other copy, so copy the folder to a second place (an external drive, a cloud folder) after each release. [4.2](#42-publish-and-load-a-new-boundary-release) step 0 checks the archive and step 4 adds the new release to it. Do not keep release copies in `scripts/`: it is gitignored scratch, and the converter writes its default output there.
+
+Rules:
+
 - **Never delete** the release `SITEPLAIN_DATA_NPL_BOUNDARIES_URL` points to, or the one before it (the rollback target of [5.1](#51-data-rollback-to-the-previous-release)). The app needs the current one again whenever the database is rebuilt or a re-download is forced.
 - **Never edit a release or replace its asset.** A tag names one file forever: the app decides on the URL, so a replaced asset is never loaded by a running site, and `data_source_state.sha256` would no longer match GitHub's digest. Publish a new tag instead.
-- Older releases may be deleted once the current one shows `LOADED` with a SHA-256 equal to its GitHub digest. Today: `data-2026-07-12` (live) and `data-v1` (previous). After the next release goes live, `data-v1` can go.
-- Keep a local copy of the current and previous GeoJSON (with their SHA-256) outside the repo; the asset is gitignored and GitHub is the only other copy.
+- Older releases may be deleted from GitHub once the current one shows `LOADED` with a SHA-256 equal to its GitHub digest (or its `Downloaded` log line does, [6.1](#61-prod-check-from-the-deploy-logs)). After the next release goes live, `data-v1` can go. Keep its archive copy and its row in this table, marked deleted.
 
 ---
 
