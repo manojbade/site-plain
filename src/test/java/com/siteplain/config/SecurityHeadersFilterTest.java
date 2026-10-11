@@ -108,14 +108,29 @@ class SecurityHeadersFilterTest {
                 .containsEntry("child-src", "blob:")
                 .containsEntry("report-uri", "/csp-report");
         assertThat(sources(directives, "script-src"))
-                .containsExactly("'self'", "https://www.googletagmanager.com", "https://api.mapbox.com");
+                .containsExactly("'self'", "https://www.googletagmanager.com", "https://api.mapbox.com",
+                        "https://static.cloudflareinsights.com");
         assertThat(sources(directives, "style-src"))
                 .containsExactly("'self'", "https://fonts.googleapis.com", "https://cdn.jsdelivr.net", "https://api.mapbox.com");
         assertThat(sources(directives, "font-src")).containsExactly("https://fonts.gstatic.com");
         assertThat(sources(directives, "connect-src")).contains("'self'", "https://*.google-analytics.com",
                 "https://*.analytics.google.com", "https://www.google.com", "https://api.mapbox.com",
-                "https://*.tiles.mapbox.com", "https://events.mapbox.com");
+                "https://*.tiles.mapbox.com", "https://events.mapbox.com", "https://cloudflareinsights.com");
         assertThat(sources(directives, "img-src")).contains("'self'", "data:", "blob:", "https://*.tiles.mapbox.com");
+    }
+
+    @Test
+    void cloudflareWebAnalytics_isAllowedOnlyWhereTheBeaconNeedsIt() {
+        Map<String, String> directives = directives();
+
+        // The beacon script loads from static.cloudflareinsights.com and posts to cloudflareinsights.com/cdn-cgi/rum.
+        Map<String, List<String>> withCloudflare = directives.keySet().stream()
+                .filter(name -> sources(directives, name).stream().anyMatch(source -> source.contains("cloudflareinsights")))
+                .collect(Collectors.toMap(name -> name, name -> sources(directives, name).stream()
+                        .filter(source -> source.contains("cloudflareinsights")).toList()));
+        assertThat(withCloudflare).containsOnly(
+                Map.entry("script-src", List.of("https://static.cloudflareinsights.com")),
+                Map.entry("connect-src", List.of("https://cloudflareinsights.com")));
     }
 
     static Map<String, String> directives() {

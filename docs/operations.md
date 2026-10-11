@@ -140,7 +140,7 @@ Every response (pages, static files, JSON, the PDF, redirects, error pages, prob
 
 | Header | Value |
 |---|---|
-| `Content-Security-Policy` | `default-src 'self'`; scripts from self, `www.googletagmanager.com`, `api.mapbox.com`; styles from self, `fonts.googleapis.com`, `cdn.jsdelivr.net`, `api.mapbox.com`; fonts from `fonts.gstatic.com`; images and connections to self, Google Analytics, `www.google.com` and Mapbox; `worker-src blob:`; `object-src 'none'`; `base-uri 'self'`; `form-action 'self'`; `frame-ancestors 'none'`; `report-uri /csp-report`. No `unsafe-inline`, no `unsafe-eval`. The exact string is `SecurityHeadersFilter.CONTENT_SECURITY_POLICY` |
+| `Content-Security-Policy` | `default-src 'self'`; scripts from self, `www.googletagmanager.com`, `api.mapbox.com`, `static.cloudflareinsights.com`; styles from self, `fonts.googleapis.com`, `cdn.jsdelivr.net`, `api.mapbox.com`; fonts from `fonts.gstatic.com`; images and connections to self, Google Analytics, `www.google.com` and Mapbox; connections also to `cloudflareinsights.com`; `worker-src blob:`; `object-src 'none'`; `base-uri 'self'`; `form-action 'self'`; `frame-ancestors 'none'`; `report-uri /csp-report`. No `unsafe-inline`, no `unsafe-eval`. The exact string is `SecurityHeadersFilter.CONTENT_SECURITY_POLICY` |
 | `Strict-Transport-Security` | `max-age=31536000` (HTTPS requests only; no `includeSubDomains`, no preload) |
 | `X-Content-Type-Options` | `nosniff` |
 | `X-Frame-Options` | `DENY` |
@@ -149,6 +149,8 @@ Every response (pages, static files, JSON, the PDF, redirects, error pages, prob
 | `X-Robots-Tag` | `noindex`, only on `/results`, `/results/pdf` and their error and busy responses (see [owner action 7](#owner-actions)) |
 
 Check from anywhere: `curl -sI https://site-plain.com/ | grep -iE 'content-security|strict-transport|x-frame|referrer|permissions|x-content'`.
+
+**Cloudflare edge-injected scripts.** Cloudflare Web Analytics (cookieless) injects its beacon into every HTML page at the edge. The policy allows it, per Cloudflare's documented CSP requirements: the script from `https://static.cloudflareinsights.com` (`script-src`) and its posts to `https://cloudflareinsights.com/cdn-cgi/rum` (`connect-src`). Other Cloudflare features that inject or rewrite scripts, such as Rocket Loader and Zaraz, are still blocked by the policy: leave them off, or extend the policy first.
 
 **CSP mode switch.** If production shows the policy blocking something it should not (a broken map, missing analytics), switch to report-only without a code change:
 

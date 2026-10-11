@@ -30,6 +30,10 @@ import org.springframework.web.util.UrlPathHelper;
  *   <li>api.mapbox.com: Mapbox GL JS and its CSS on /results, the map's styles, sprites and glyphs,
  *       and the home page's address suggestions (Geocoding v6).</li>
  *   <li>*.tiles.mapbox.com and events.mapbox.com: map tiles and Mapbox GL's telemetry.</li>
+ *   <li>static.cloudflareinsights.com (script-src) and cloudflareinsights.com (connect-src): the
+ *       Cloudflare Web Analytics beacon, which Cloudflare injects into every HTML page at the edge
+ *       and which posts to cloudflareinsights.com/cdn-cgi/rum. Cookieless. Other edge-injected
+ *       scripts (Rocket Loader, Zaraz) stay blocked.</li>
  *   <li>blob: (workers, images) and data: (images): Mapbox GL's workers and images, Bootstrap's and
  *       Mapbox GL's inline SVG icons. Mapbox GL sets element styles through the CSSOM, which
  *       style-src does not restrict.</li>
@@ -51,7 +55,8 @@ public class SecurityHeadersFilter extends OncePerRequestFilter {
 
     public static final String CONTENT_SECURITY_POLICY = String.join("; ",
             "default-src 'self'",
-            "script-src 'self' https://www.googletagmanager.com https://api.mapbox.com",
+            "script-src 'self' https://www.googletagmanager.com https://api.mapbox.com "
+                    + "https://static.cloudflareinsights.com",
             "style-src 'self' https://fonts.googleapis.com https://cdn.jsdelivr.net https://api.mapbox.com",
             "font-src https://fonts.gstatic.com",
             "img-src 'self' data: blob: https://www.googletagmanager.com https://*.google-analytics.com "
@@ -59,7 +64,7 @@ public class SecurityHeadersFilter extends OncePerRequestFilter {
                     + "https://*.tiles.mapbox.com",
             "connect-src 'self' https://www.googletagmanager.com https://*.google-analytics.com "
                     + "https://*.analytics.google.com https://www.google.com https://api.mapbox.com "
-                    + "https://*.tiles.mapbox.com https://events.mapbox.com",
+                    + "https://*.tiles.mapbox.com https://events.mapbox.com https://cloudflareinsights.com",
             "worker-src blob:",
             "child-src blob:",
             "object-src 'none'",
