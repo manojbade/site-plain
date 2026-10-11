@@ -24,6 +24,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import org.slf4j.Logger;
@@ -258,7 +259,7 @@ public class DataBootstrapService implements ApplicationRunner {
     }
 
     private StagedSource stageBoundaries() throws Exception {
-        String url = StringUtils.trimWhitespace(dataProperties.getNplBoundariesUrl());
+        String url = Objects.toString(dataProperties.getNplBoundariesUrl(), "").strip();
         if (!StringUtils.hasText(url)) {
             throw new IllegalStateException("SITEPLAIN_DATA_NPL_BOUNDARIES_URL is required to load boundaries");
         }
@@ -277,7 +278,7 @@ public class DataBootstrapService implements ApplicationRunner {
 
     /** Stages the exposure feed, or returns null when it is byte-for-byte the live feed. */
     private StagedSource stageHumanExposure(boolean boundariesStaged) throws Exception {
-        String url = StringUtils.trimWhitespace(dataProperties.getHumanExposureUrl());
+        String url = Objects.toString(dataProperties.getHumanExposureUrl(), "").strip();
         if (!StringUtils.hasText(url)) {
             throw new IllegalStateException("SITEPLAIN_DATA_HUMAN_EXPOSURE_URL is not set");
         }

@@ -4,6 +4,7 @@ import com.siteplain.config.DataProperties;
 import com.siteplain.data.repository.DataSourceRepository;
 import com.siteplain.data.repository.DataSourceRepository.DataSourceRecord;
 import com.siteplain.data.repository.NplBoundaryRepository;
+import java.util.Objects;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -39,7 +40,7 @@ public class DataRefreshPolicyService {
         if (startup && dataProperties.isRefreshOnStartup()) {
             return new BoundaryDecision(Action.RELOAD, "SITEPLAIN_DATA_REFRESH_ON_STARTUP=true");
         }
-        String configuredUrl = StringUtils.trimWhitespace(dataProperties.getNplBoundariesUrl());
+        String configuredUrl = Objects.toString(dataProperties.getNplBoundariesUrl(), "").strip();
         if (!StringUtils.hasText(configuredUrl)) {
             return new BoundaryDecision(Action.KEEP, "SITEPLAIN_DATA_NPL_BOUNDARIES_URL is not set");
         }
