@@ -8,6 +8,8 @@ import com.siteplain.domain.view.ResultsViewModel;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.text.PDFTextStripper;
 import org.junit.jupiter.api.Test;
 import org.thymeleaf.context.Context;
 import org.thymeleaf.spring6.SpringTemplateEngine;
@@ -91,6 +93,57 @@ class ResultsPdfServiceTest {
         assertThat(html).doesNotContain("Queried address").contains("<td>42.48000, -71.15000</td>");
         context.setVariable("viewModel", full);
         assertThat(templateEngine().process("results-pdf", context)).contains("<td>Queried address</td>");
+    }
+
+    @Test
+    void pdfLegend_keepsEachSquareInTheSameCellAsItsLabel() {
+        Context context = new Context(Locale.US);
+        context.setVariable("viewModel", viewModel(null));
+        String html = templateEngine().process("results-pdf", context);
+
+        assertThat(html).contains("<table class=\"legend\">")
+                .contains("<td><span class=\"swatch swatch-red\"></span>Not under control</td>")
+                .contains("<td><span class=\"swatch swatch-yellow\"></span>Under control</td>")
+                .contains("<td><span class=\"swatch swatch-green\"></span>Long-term protection achieved</td>")
+                .contains("<td><span class=\"swatch swatch-gray\"></span>Insufficient data or not reported</td>")
+                .doesNotContain("legend-item");
+    }
+
+    @Test
+    void pdf_breaksInsideALongSiteBlockButKeepsItsHeadingWithItsStatus() throws Exception {
+        NplSite longNote = sampleSite();
+        longNote.setEpaId("TEST002");
+        longNote.setSiteName("Long Note Site");
+        longNote.setDistanceMeters(900.0);
+        longNote.setExposureStatusCode("HEUC");
+        longNote.setExposureStatusLabel("Human exposure is under control");
+        longNote.setExposureStatusColor("yellow");
+        // About 30 lines: shorter than a page, too long for what is left of page 1 under the report details.
+        StringBuilder note = new StringBuilder("NOTESTART");
+        for (int line = 1; line <= 30; line++) {
+            note.append("<br/>Line ").append(line).append(" of the EPA pathway note for this site.");
+        }
+        longNote.setExposurePathwayDescription(note.toString());
+        ResultsViewModel model = new ResultsViewModel("57 Salem Street, Woburn, MA 01801", "57 Salem Street, Woburn, MA 01801",
+                false, true, 1, List.of(longNote), null, "MA", 42.48, -71.15, null, null, 1337, List.of(), 15,
+                null, "October 10, 2026", null);
+
+        byte[] pdf = new ResultsPdfService(templateEngine(), siteProperties(), WorkLimits.unlimited()).generateResultsPdf(model);
+
+        try (PDDocument document = PDDocument.load(pdf)) {
+            String page1 = pageText(document, 1);
+            String page2 = pageText(document, 2);
+            // The block starts on page 1 with its name, distance and status together, and the note continues on page 2.
+            assertThat(page1).contains("Long Note Site").contains("Human exposure is under control").contains("NOTESTART");
+            assertThat(page2).doesNotContain("Long Note Site").contains("Line 30 of the EPA pathway note");
+        }
+    }
+
+    private static String pageText(PDDocument document, int page) throws java.io.IOException {
+        PDFTextStripper stripper = new PDFTextStripper();
+        stripper.setStartPage(page);
+        stripper.setEndPage(page);
+        return stripper.getText(document);
     }
 
     private static ResultsViewModel viewModel(String approximateMatch) {

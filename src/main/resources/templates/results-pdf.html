@@ -132,10 +132,21 @@
       color: #9b1c1c;
     }
 
+    /* A site block may break across pages, so a long EPA pathway note continues on the next page instead of
+       pushing the whole block there and leaving the page before it mostly empty. Its name, distance, ID
+       and status stay together (.site-top), and a note never leaves a lone line at a page edge. */
     .site {
       border-top: 1px solid #dde1e6;
       padding: 10px 0 8px;
+    }
+
+    .site-top {
       page-break-inside: avoid;
+    }
+
+    .site p {
+      orphans: 3;
+      widows: 3;
     }
 
     .site-first {
@@ -212,15 +223,27 @@
       color: #55667a;
     }
 
+    /* The legend is a table, two entries a row, so a square is never split from its label at a line end. */
     .legend {
+      border-collapse: collapse;
       color: #55667a;
       font-size: 9pt;
       margin: 0 0 8px;
+      page-break-inside: avoid;
+      width: 100%;
     }
 
-    .legend-item {
-      margin-right: 12px;
+    .legend td {
+      padding: 1px 12px 1px 0;
+      vertical-align: top;
       white-space: nowrap;
+      width: 50%;
+    }
+
+    .legend .legend-title {
+      color: #11263d;
+      font-weight: bold;
+      padding-bottom: 3px;
     }
 
     .legend .swatch {
@@ -318,28 +341,34 @@
     </table>
 
     <h2 class="section-title">Sites by distance</h2>
-    <p class="legend">
-      EPA human exposure status:
-      <span class="legend-item"><span class="swatch swatch-red"></span>Not under control</span>
-      <span class="legend-item"><span class="swatch swatch-yellow"></span>Under control</span>
-      <span class="legend-item"><span class="swatch swatch-green"></span>Long-term protection achieved</span>
-      <span class="legend-item"><span class="swatch swatch-gray"></span>Insufficient data or not reported</span>
-    </p>
+    <table class="legend">
+      <tr><td class="legend-title" colspan="2">EPA human exposure status</td></tr>
+      <tr>
+        <td><span class="swatch swatch-red"></span>Not under control</td>
+        <td><span class="swatch swatch-yellow"></span>Under control</td>
+      </tr>
+      <tr>
+        <td><span class="swatch swatch-green"></span>Long-term protection achieved</td>
+        <td><span class="swatch swatch-gray"></span>Insufficient data or not reported</td>
+      </tr>
+    </table>
     <div class="site" th:each="site, iter : ${viewModel.sites}" th:classappend="${iter.first} ? 'site-first'"
          th:with="color=${site.exposureStatusColor != null ? site.exposureStatusColor : 'gray'}">
-      <table class="site-head">
-        <tr>
-          <td class="site-name" th:text="${site.siteName}">Site name</td>
-          <td class="site-distance">
-            <span th:classappend="${site.distanceMeters <= 0} ? 'inside'"
-                  th:text="${T(com.siteplain.support.DistanceFormatter).format(site.distanceMeters)}">0.4 miles</span>
-          </td>
-        </tr>
-      </table>
-      <p class="muted">EPA ID <span th:text="${site.epaId}">TEST001</span> &#183; <span th:text="${site.stateCode}">GA</span></p>
-      <p class="status" th:classappend="${color == 'red'} ? 'status-red' : (${color == 'gray'} ? 'status-gray' : '')">
-        <span class="swatch" th:classappend="'swatch-' + ${color}"></span><span th:text="${site.exposureStatusLabel}">Human exposure is under control</span>
-      </p>
+      <div class="site-top">
+        <table class="site-head">
+          <tr>
+            <td class="site-name" th:text="${site.siteName}">Site name</td>
+            <td class="site-distance">
+              <span th:classappend="${site.distanceMeters <= 0} ? 'inside'"
+                    th:text="${T(com.siteplain.support.DistanceFormatter).format(site.distanceMeters)}">0.4 miles</span>
+            </td>
+          </tr>
+        </table>
+        <p class="muted">EPA ID <span th:text="${site.epaId}">TEST001</span> &#183; <span th:text="${site.stateCode}">GA</span></p>
+        <p class="status" th:classappend="${color == 'red'} ? 'status-red' : (${color == 'gray'} ? 'status-gray' : '')">
+          <span class="swatch" th:classappend="'swatch-' + ${color}"></span><span th:text="${site.exposureStatusLabel}">Human exposure is under control</span>
+        </p>
+      </div>
       <p th:if="${site.exposurePathwayDescription != null and !#strings.isEmpty(site.exposurePathwayDescription)}">
         <strong>EPA pathway note:</strong>
         <span><th:block th:each="line, it : ${site.exposurePathwayLines()}"><br th:unless="${it.first}"/><th:block th:text="${line}">EPA text</th:block></th:block></span>
