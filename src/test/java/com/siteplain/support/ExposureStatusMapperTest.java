@@ -37,4 +37,12 @@ class ExposureStatusMapperTest {
     void unknownInput_returnsGrayColor() {
         assertThat(ExposureStatusMapper.color("UNKNOWN")).isEqualTo("gray");
     }
+
+    @Test
+    void badgeCssClass_usesTheStatusClassForEachColor() {
+        assertThat(ExposureStatusMapper.badgeCssClass("HENC")).isEqualTo("sp-status-red");
+        assertThat(ExposureStatusMapper.badgeCssClass("HEPR")).isEqualTo("sp-status-yellow");
+        assertThat(ExposureStatusMapper.badgeCssClass("HHPA")).isEqualTo("sp-status-green");
+        assertThat(ExposureStatusMapper.badgeCssClass(null)).isEqualTo("sp-status-gray");
+    }
 }

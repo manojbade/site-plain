@@ -212,6 +212,43 @@ class PageRenderingIntegrationTest {
     }
 
     @Test
+    void resultsPage_showsStatusLegendAndStatusSquares() throws Exception {
+        String results = mockMvc.perform(get("/results")
+                        .param("lat", "39.825")
+                        .param("lng", "-84.055")
+                        .param("address", "1 Main St, Dayton, OH")
+                        .param("state", "OH"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(results).contains("class=\"sp-status-legend\"")
+                .contains("<span class=\"sp-status sp-status-red\">Not under control</span>")
+                .contains("<span class=\"sp-status sp-status-yellow\">Under control</span>")
+                .contains("<span class=\"sp-status sp-status-green\">Long-term protection achieved</span>")
+                .contains("<span class=\"sp-status sp-status-gray\">Insufficient data or not reported</span>")
+                // The HENC fixture site is "not under control", the only state shown in red.
+                .contains("<span class=\"sp-status sp-status-red\">Human exposure is NOT currently under control</span>")
+                .doesNotContain("badge-exposure-");
+
+        String site = mockMvc.perform(get("/site/OHR000000002"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(site).contains("<span class=\"sp-status sp-status-gray\">Exposure status: insufficient data</span>");
+    }
+
+    @Test
+    void feedbackForm_putsTheCommentBoxBeforeTheAnswerButtons() throws Exception {
+        String site = mockMvc.perform(get("/site/OHR000000001"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        int form = site.indexOf("id=\"feedback\"");
+        int comments = site.indexOf("name=\"comments\"", form);
+        int yes = site.indexOf("name=\"helpful\" value=\"true\"", form);
+        assertThat(form).isPositive();
+        assertThat(comments).isPositive().isLessThan(yes);
+        assertThat(site).contains("<label class=\"form-label tt-field-label mb-2\" for=\"feedback-comments\">");
+    }
+
+    @Test
     void statePage_metaDescriptionNamesState() throws Exception {
         String html = mockMvc.perform(get("/state/OH"))
                 .andExpect(status().isOk())

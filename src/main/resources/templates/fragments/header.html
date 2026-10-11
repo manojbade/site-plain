@@ -1,16 +1,16 @@
 <!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org">
 <body>
-<header th:fragment="header" class="site-header">
+<header th:fragment="header" class="tt-masthead">
   <div class="container">
-    <div class="site-masthead-inner">
-      <a class="brand text-decoration-none" th:href="@{/}">
-        <span class="brand-mark">Site Plain</span>
-        <span class="brand-sub">EPA Superfund sites near you, in plain language</span>
+    <div class="tt-masthead-inner">
+      <a class="tt-brand text-decoration-none" th:href="@{/}">
+        <span class="tt-brand-mark">Site Plain</span>
+        <span class="tt-brand-sub">EPA Superfund sites near you, in plain language</span>
       </a>
-      <nav class="site-nav" aria-label="Primary">
-        <a class="site-nav-link" th:href="@{/about}">About</a>
-        <a class="site-nav-button" th:href="@{/#feedback}">Feedback</a>
+      <nav class="tt-nav" aria-label="Primary">
+        <a class="tt-nav-link" th:href="@{/about}">About</a>
+        <a class="tt-nav-button tt-btn-secondary" th:href="@{/feedback}">Feedback</a>
       </nav>
     </div>
   </div>

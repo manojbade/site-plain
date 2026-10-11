@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org">
 <body>
+<!--/* The label states the status in words; the square is a second cue, never the only one. */-->
 <span th:fragment="badge(code, label)"
-      class="exposure-badge"
+      class="sp-status"
       th:classappend="${T(com.siteplain.support.ExposureStatusMapper).badgeCssClass(code)}"
       th:text="${label}">Exposure status</span>
 </body>

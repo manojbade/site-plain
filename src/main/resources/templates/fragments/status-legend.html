@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+<!--/* Key for the four EPA human exposure status colors. Same classes as the status badge. */-->
+<div th:fragment="legend" class="sp-status-legend">
+  <p class="sp-status-legend-title">EPA human exposure status</p>
+  <ul class="sp-status-legend-list">
+    <li><span class="sp-status sp-status-red">Not under control</span></li>
+    <li><span class="sp-status sp-status-yellow">Under control</span></li>
+    <li><span class="sp-status sp-status-green">Long-term protection achieved</span></li>
+    <li><span class="sp-status sp-status-gray">Insufficient data or not reported</span></li>
+  </ul>
+</div>
+</body>
+</html>

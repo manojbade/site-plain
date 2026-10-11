@@ -43,6 +43,6 @@ public final class ExposureStatusMapper {
     }
 
     public static String badgeCssClass(String code) {
-        return "badge-exposure-" + color(code);
+        return "sp-status-" + color(code);
     }
 }
