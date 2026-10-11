@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.net.URI;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,7 +24,11 @@ import org.springframework.test.web.servlet.MockMvc;
         "siteplain.limits.feedback.capacity=2",
         "siteplain.limits.feedback.refill=1h",
         "siteplain.limits.suggestions.capacity=2",
-        "siteplain.limits.suggestions.refill=1h"
+        "siteplain.limits.suggestions.refill=1h",
+        "siteplain.limits.lookup.capacity=2",
+        "siteplain.limits.lookup.refill=1h",
+        "siteplain.limits.pdf.capacity=2",
+        "siteplain.limits.pdf.refill=1h"
 })
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -85,5 +90,61 @@ class RateLimitIntegrationTest {
         } finally {
             jdbcTemplate.update("DELETE FROM feedback WHERE comments = ?", marker);
         }
+    }
+
+    /**
+     * Spring strips ;params and decodes the path before matching, so "/feedback;a=b" and
+     * "/feedbac%6B" reach the same handler as "/feedback". They must draw on the same bucket.
+     */
+    @Test
+    void pathParametersAndPercentEncodingDoNotEscapeTheFeedbackLimit() throws Exception {
+        String marker = "rate-limit-test 7e09";
+        String ip = "203.0.113.40";
+        try {
+            for (int i = 0; i < 2; i++) {
+                mockMvc.perform(post("/feedback").param("pageType", "general").param("comments", marker)
+                                .header("X-Real-IP", ip))
+                        .andExpect(status().is3xxRedirection());
+            }
+            for (String variant : new String[] {"/feedback;a=b", "/feedback;x=1", "/feedbac%6B", "/%66eedback"}) {
+                mockMvc.perform(post(URI.create(variant)).param("pageType", "general").param("comments", marker)
+                                .header("X-Real-IP", ip))
+                        .andExpect(status().isTooManyRequests());
+            }
+            Integer saved = jdbcTemplate.queryForObject("SELECT count(*) FROM feedback WHERE comments = ?", Integer.class, marker);
+            assertThat(saved).isEqualTo(2);
+        } finally {
+            jdbcTemplate.update("DELETE FROM feedback WHERE comments = ?", marker);
+        }
+    }
+
+    @Test
+    void pathVariantsDoNotEscapeTheLookupLimit() throws Exception {
+        String ip = "203.0.113.41";
+        // A blank address is refused as a 400 by the controller, but still spends a token first.
+        for (int i = 0; i < 2; i++) {
+            mockMvc.perform(post("/lookup").param("address", "").header("X-Real-IP", ip))
+                    .andExpect(status().isBadRequest());
+        }
+        for (String variant : new String[] {"/lookup;x", "/lookup;a=b", "/%6Cookup", "/looku%70"}) {
+            mockMvc.perform(post(URI.create(variant)).param("address", "").header("X-Real-IP", ip))
+                    .andExpect(status().isTooManyRequests());
+        }
+    }
+
+    @Test
+    void pathVariantsDoNotEscapeThePdfLimit() throws Exception {
+        String ip = "203.0.113.42";
+        // Without a location the controller answers 400, but the token is spent first.
+        for (int i = 0; i < 2; i++) {
+            mockMvc.perform(get("/results/pdf").header("X-Real-IP", ip))
+                    .andExpect(status().isBadRequest());
+        }
+        for (String variant : new String[] {"/results/pdf;a=b", "/%72esults/pdf", "/results/%70df", "/results;x/pdf"}) {
+            mockMvc.perform(get(URI.create(variant)).header("X-Real-IP", ip))
+                    .andExpect(status().isTooManyRequests());
+        }
+        // The results page has its own bucket, so it is still open to this client.
+        mockMvc.perform(get("/results").header("X-Real-IP", ip)).andExpect(status().isOk());
     }
 }

@@ -9,12 +9,20 @@ import java.time.Clock;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.server.PathContainer;
+import org.springframework.http.server.RequestPath;
 import org.springframework.web.servlet.HandlerInterceptor;
+import org.springframework.web.servlet.HandlerMapping;
+import org.springframework.web.util.ServletRequestPathUtils;
 
 /**
  * Applies the per-client rate limit of the endpoint being called. A refusal is a ServiceBusyException
  * (429 with Retry-After and the plain busy page), logged as at most one WARN line a minute per
  * endpoint, without the client's address.
+ *
+ * <p>The limiter is chosen by the path Spring matched, not the raw request URI. Spring strips
+ * ;params and decodes the path before matching, so "/feedback;a=b" and "/%66eedback" reach the
+ * POST /feedback handler and must draw on its bucket too.
  *
  * <p>Default limits per client (LimitsProperties), each well above what a person does by hand:
  * POST /lookup 30 at once then 20 a minute; GET /results 60 then 60 a minute; GET /results/pdf 10
@@ -54,7 +62,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
         String method = "HEAD".equals(request.getMethod()) ? "GET" : request.getMethod();
-        RateLimiter limiter = limiters.get(method + " " + request.getRequestURI());
+        RateLimiter limiter = limiters.get(method + " " + matchedPath(request));
         if (limiter == null) {
             return true;
         }
@@ -65,5 +73,24 @@ public class RateLimitInterceptor implements HandlerInterceptor {
                     limiter.name() + " rate limit");
         }
         return true;
+    }
+
+    /**
+     * The handler's mapping pattern ("/results/pdf"), which Spring sets before interceptors run. If
+     * a handler sets none, the parsed request path with each segment decoded and its ;params
+     * dropped, the form Spring matches mappings against.
+     */
+    static String matchedPath(HttpServletRequest request) {
+        if (request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE) instanceof String pattern) {
+            return pattern;
+        }
+        RequestPath path = ServletRequestPathUtils.hasParsedRequestPath(request)
+                ? ServletRequestPathUtils.getParsedRequestPath(request)
+                : RequestPath.parse(request.getRequestURI(), request.getContextPath());
+        StringBuilder normalized = new StringBuilder();
+        for (PathContainer.Element element : path.pathWithinApplication().elements()) {
+            normalized.append(element instanceof PathContainer.PathSegment segment ? segment.valueToMatch() : element.value());
+        }
+        return normalized.toString();
     }
 }
