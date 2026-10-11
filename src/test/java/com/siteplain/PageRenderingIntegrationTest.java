@@ -499,6 +499,17 @@ class PageRenderingIntegrationTest {
                 .contains("min(calc(100% - var(--bs-gutter-x)), 50rem) 2px no-repeat;");
     }
 
+    @Test
+    void everyLookupForm_carriesTheHiddenHoneypotField() throws Exception {
+        for (String[] page : new String[][] {{"/", "lookup-website"}, {"/site/OHR000000001", "site-lookup-website"},
+                {"/state/OH", "state-lookup-website"}}) {
+            String html = page(get(page[0]), 200);
+            assertThat(html).as(page[0]).containsPattern("<form method=\"post\"\\s+action=\"/lookup\"[^>]*>\\s*"
+                    + "<div class=\"d-none\" aria-hidden=\"true\">\\s*<label for=\"" + page[1] + "\">Leave this field empty</label>\\s*"
+                    + "<input type=\"text\" id=\"" + page[1] + "\" name=\"website\" value=\"\" tabindex=\"-1\" autocomplete=\"off\">");
+        }
+    }
+
     /** GET /results with an encrypted link, as POST /lookup would have issued it. */
     private MockHttpServletRequestBuilder results(double lat, double lng, String label, String state, String approx) {
         return get("/results").param("r", resultsTokens.encode(

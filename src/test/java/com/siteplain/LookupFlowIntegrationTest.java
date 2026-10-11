@@ -2,6 +2,8 @@ package com.siteplain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -78,7 +80,7 @@ class LookupFlowIntegrationTest {
                 "census", 39.825, -84.055, true));
         int auditBefore = auditRows();
 
-        String location = mockMvc.perform(post("/lookup").param("address", "12 Flow Test Rd, Dayton, OH"))
+        String location = mockMvc.perform(post("/lookup").param("address", "12 Flow Test Rd, Dayton, OH").header("Sec-Fetch-Site", "same-origin"))
                 .andExpect(status().is3xxRedirection())
                 .andReturn().getResponse().getRedirectedUrl();
         assertThat(location).matches("/results\\?r=[A-Za-z0-9_-]+");
@@ -112,7 +114,7 @@ class LookupFlowIntegrationTest {
         when(geocodingService.geocode(anyString())).thenReturn(GeocodedAddress.unresolved("zzqx nowhere"));
         int auditBefore = auditRows();
 
-        String location = mockMvc.perform(post("/lookup").param("address", "zzqx nowhere"))
+        String location = mockMvc.perform(post("/lookup").param("address", "zzqx nowhere").header("Sec-Fetch-Site", "same-origin"))
                 .andExpect(status().is3xxRedirection())
                 .andReturn().getResponse().getRedirectedUrl();
         assertThat(location).matches("/results\\?r=[A-Za-z0-9_-]+");
@@ -126,6 +128,56 @@ class LookupFlowIntegrationTest {
         assertThat(html).contains("Address could not be resolved").doesNotContain("zzqx nowhere")
                 .doesNotContain("Submitted address");
         assertThat(auditRows()).isEqualTo(auditBefore + 1);
+    }
+
+    @Test
+    void onlyThisSitesOwnFormsCanRunALookup() throws Exception {
+        when(geocodingService.geocode(anyString())).thenReturn(new GeocodedAddress(
+                "12 Flow Test Rd, Dayton, OH", "12 FLOW TEST RD, DAYTON, OH, 45431", "DAYTON", "OH", "45431",
+                "census", 39.825, -84.055, true));
+        int auditBefore = auditRows();
+
+        // A form on another site, a sibling subdomain, and a script that sends neither header: refused, nothing written.
+        mockMvc.perform(post("/lookup").param("address", "12 Flow Test Rd").header("Sec-Fetch-Site", "cross-site")
+                        .header("Origin", "https://evil.example"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/lookup").param("address", "12 Flow Test Rd").header("Sec-Fetch-Site", "same-site"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/lookup").param("address", "12 Flow Test Rd"))
+                .andExpect(status().isForbidden());
+        // An older browser without Sec-Fetch-Site: Origin must be this host (MockMvc serves http://localhost).
+        mockMvc.perform(post("/lookup").param("address", "12 Flow Test Rd").header("Origin", "https://evil.example"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/lookup").param("address", "12 Flow Test Rd").header("Origin", "null"))
+                .andExpect(status().isForbidden());
+        String forbidden = mockMvc.perform(post("/lookup").param("address", "12 Flow Test Rd").header("Origin", "http://localhost:8080"))
+                .andExpect(status().isForbidden())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(forbidden).contains("Site Plain could not use this request");
+        assertThat(auditRows()).isEqualTo(auditBefore);
+        verify(geocodingService, never()).geocode(anyString());
+
+        // The same-origin form works with either header, and needs no JavaScript.
+        mockMvc.perform(post("/lookup").param("address", "12 Flow Test Rd").header("Origin", "http://localhost"))
+                .andExpect(status().is3xxRedirection());
+        mockMvc.perform(post("/lookup").param("address", "12 Flow Test Rd").header("Sec-Fetch-Site", "same-origin")
+                        .header("Origin", "http://localhost"))
+                .andExpect(status().is3xxRedirection());
+        assertThat(auditRows()).isEqualTo(auditBefore + 2);
+    }
+
+    @Test
+    void aFilledHoneypotRunsNoLookupAndShowsTheGenericPage() throws Exception {
+        int auditBefore = auditRows();
+        String location = mockMvc.perform(post("/lookup").param("address", "12 Flow Test Rd, Dayton, OH")
+                        .param("website", "http://spam.example").header("Sec-Fetch-Site", "same-origin"))
+                .andExpect(status().is3xxRedirection())
+                .andReturn().getResponse().getRedirectedUrl();
+        assertThat(location).matches("/results\\?r=[A-Za-z0-9_-]+");
+        assertThat(auditRows()).isEqualTo(auditBefore);
+        verify(geocodingService, never()).geocode(anyString());
+        assertThat(mockMvc.perform(get(location)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString())
+                .contains("Address could not be resolved").doesNotContain("Flow Test");
     }
 
     private int auditRows() {

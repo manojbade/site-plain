@@ -3,6 +3,7 @@ package com.siteplain.web.advice;
 import com.siteplain.service.ServiceBusyException;
 import com.siteplain.support.ThrottledLog;
 import com.siteplain.web.BadRequestException;
+import com.siteplain.web.ForbiddenException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.time.Duration;
@@ -78,6 +79,14 @@ public class GlobalExceptionHandler {
         return "error/not-found";
     }
 
+    @ExceptionHandler(ForbiddenException.class)
+    public String handleForbidden(ForbiddenException exception, HttpServletRequest request, HttpServletResponse response, Model model) {
+        logClientError(HttpServletResponse.SC_FORBIDDEN, exception, request);
+        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+        model.addAttribute("status", HttpServletResponse.SC_FORBIDDEN);
+        return "error/not-found";
+    }
+
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
     public String handleMethodNotAllowed(HttpRequestMethodNotSupportedException exception,
                                         HttpServletRequest request,
@@ -136,7 +145,8 @@ public class GlobalExceptionHandler {
      */
     private void logClientError(int status, Exception exception, HttpServletRequest request) {
         String type = exception.getClass().getSimpleName();
-        String detail = exception instanceof BadRequestException ? ": " + exception.getMessage() : "";
+        String detail = exception instanceof BadRequestException || exception instanceof ForbiddenException
+                ? ": " + exception.getMessage() : "";
         clientErrors.warn(status + " " + type, "Client error " + status + " on " + request.getMethod() + " "
                 + request.getRequestURI() + " (" + type + detail + ")");
     }

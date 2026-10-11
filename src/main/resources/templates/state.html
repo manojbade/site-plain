@@ -22,6 +22,7 @@
       <div class="col-lg-5 tt-lookup-band">
         <div class="tt-primary-lookup-pane">
           <form method="post" th:action="@{/lookup}" th:object="${lookupForm}" class="row g-3">
+            <div th:replace="~{fragments/honeypot :: honeypot('state-lookup-website')}"></div>
             <div class="col-12">
               <label class="form-label mb-2 tt-primary-input-label" for="state-lookup-address">Enter your address to find sites near you</label>
               <input type="text"

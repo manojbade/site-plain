@@ -123,7 +123,7 @@ class RateLimitIntegrationTest {
         String ip = "203.0.113.41";
         // A blank address is refused as a 400 by the controller, but still spends a token first.
         for (int i = 0; i < 2; i++) {
-            mockMvc.perform(post("/lookup").param("address", "").header("X-Real-IP", ip))
+            mockMvc.perform(post("/lookup").param("address", "").header("X-Real-IP", ip).header("Sec-Fetch-Site", "same-origin"))
                     .andExpect(status().isBadRequest());
         }
         for (String variant : new String[] {"/lookup;x", "/lookup;a=b", "/%6Cookup", "/looku%70"}) {

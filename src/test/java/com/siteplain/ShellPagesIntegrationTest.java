@@ -229,11 +229,11 @@ class ShellPagesIntegrationTest {
 
     @Test
     void lookupPost_overlongOrBlankAddressIsA400WithTheFormError() throws Exception {
-        String html = mockMvc.perform(post("/lookup").param("address", "1 Main St ".repeat(21)))
+        String html = mockMvc.perform(post("/lookup").param("address", "1 Main St ".repeat(21)).header("Sec-Fetch-Site", "same-origin"))
                 .andExpect(status().isBadRequest())
                 .andReturn().getResponse().getContentAsString();
         assertThat(html).contains("id=\"lookup-address\"").contains("class=\"text-danger small mt-2\"");
-        mockMvc.perform(post("/lookup").param("address", " ")).andExpect(status().isBadRequest());
+        mockMvc.perform(post("/lookup").param("address", " ").header("Sec-Fetch-Site", "same-origin")).andExpect(status().isBadRequest());
     }
 
     @Test

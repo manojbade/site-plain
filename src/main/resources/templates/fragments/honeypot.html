@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+<!--/* Honeypot for the lookup forms, like the feedback forms': hidden from people and assistive technology;
+     a bot that fills it gets the generic could-not-resolve page and no lookup is run. */-->
+<div th:fragment="honeypot(fieldId)" class="d-none" aria-hidden="true">
+  <label th:for="${fieldId}">Leave this field empty</label>
+  <input type="text" th:id="${fieldId}" name="website" value="" tabindex="-1" autocomplete="off">
+</div>
+</body>
+</html>

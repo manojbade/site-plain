@@ -49,6 +49,7 @@
                     th:object="${lookupForm}"
                     class="row g-3 tt-primary-lookup-pane"
                     th:attr="data-mapbox-token=${mapboxPublicToken}">
+                <div th:replace="~{fragments/honeypot :: honeypot('lookup-website')}"></div>
                 <div class="col-12">
                   <label class="form-label mb-2 tt-primary-input-label" for="lookup-address">Street address</label>
                   <div class="tt-address-field-shell">

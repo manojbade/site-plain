@@ -50,6 +50,7 @@
         </div>
         <div class="tt-primary-lookup-pane">
           <form method="post" th:action="@{/lookup}" th:object="${lookupForm}" class="row g-3">
+            <div th:replace="~{fragments/honeypot :: honeypot('site-lookup-website')}"></div>
             <div class="col-12">
               <label class="form-label mb-2 tt-primary-input-label" for="site-lookup-address">Enter your address to see how close you are to this site</label>
               <input type="text"

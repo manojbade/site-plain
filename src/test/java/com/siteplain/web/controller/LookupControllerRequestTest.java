@@ -86,7 +86,7 @@ class LookupControllerRequestTest {
         NplLookupResult result = new NplLookupResult(geocoded, List.of(), null, false);
         when(nplLookupService.findSitesNear(geocoded)).thenReturn(result);
 
-        String location = mockMvc.perform(post("/lookup").param("address", "  Woburn, MA "))
+        String location = mockMvc.perform(post("/lookup").param("address", "  Woburn, MA ").header("Sec-Fetch-Site", "same-origin"))
                 .andExpect(status().is3xxRedirection())
                 .andReturn().getResponse().getRedirectedUrl();
 
@@ -107,7 +107,7 @@ class LookupControllerRequestTest {
                 "census", 42.4793, -71.1523, true));
         when(nplLookupService.findSitesNear(any())).thenReturn(new NplLookupResult(null, List.of(), null, false));
 
-        String location = mockMvc.perform(post("/lookup").param("address", "57 Salem St"))
+        String location = mockMvc.perform(post("/lookup").param("address", "57 Salem St").header("Sec-Fetch-Site", "same-origin"))
                 .andExpect(status().is3xxRedirection())
                 .andReturn().getResponse().getRedirectedUrl();
 
@@ -121,7 +121,7 @@ class LookupControllerRequestTest {
         when(geocodingService.geocode(anyString())).thenReturn(new GeocodedAddress(
                 "Null Island", "Null Island", null, null, null, "nominatim", 0.0, 0.0, true));
 
-        String location = mockMvc.perform(post("/lookup").param("address", "Null Island"))
+        String location = mockMvc.perform(post("/lookup").param("address", "Null Island").header("Sec-Fetch-Site", "same-origin"))
                 .andExpect(status().is3xxRedirection())
                 .andReturn().getResponse().getRedirectedUrl();
 

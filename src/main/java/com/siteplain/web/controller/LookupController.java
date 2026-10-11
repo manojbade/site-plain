@@ -18,14 +18,19 @@ import com.siteplain.support.StateNames;
 import com.siteplain.support.StateResourceRegistry;
 import com.siteplain.support.UsCoverageArea;
 import com.siteplain.web.BadRequestException;
+import com.siteplain.web.ForbiddenException;
 import com.siteplain.web.RequestInput;
+import com.siteplain.web.SameOrigin;
 import com.siteplain.web.form.AddressLookupForm;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import java.time.Clock;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ContentDisposition;
@@ -44,6 +49,10 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 @Controller
 public class LookupController {
+
+    /** Hidden from people (display: none, out of the tab order), as on the feedback forms; bots that fill every field fill it. */
+    static final String HONEYPOT_FIELD = "website";
+    private static final Logger log = LoggerFactory.getLogger(LookupController.class);
 
     private final GeocodingService geocodingService;
     private final NplLookupService nplLookupService;
@@ -91,13 +100,29 @@ public class LookupController {
      * The one place a lookup happens: geocode, find the sites, write the lookup_audit row, then
      * redirect to /results?r=<encrypted link>. The address and coordinates travel only inside the
      * encrypted link, so they never reach the URL, browser history or analytics.
+     *
+     * <p>Only this site's own forms may write lookup_audit rows: a post from another site, or one with
+     * neither Sec-Fetch-Site nor Origin (a simple script), is a 403 (SameOrigin). A filled honeypot
+     * field marks a bot: no geocoding and no audit row, and it gets the generic could-not-resolve page
+     * so it learns nothing.
      */
     @PostMapping("/lookup")
     public String lookup(@Valid @ModelAttribute("lookupForm") AddressLookupForm form,
                          BindingResult bindingResult,
+                         @RequestParam(name = HONEYPOT_FIELD, required = false) String honeypot,
                          Model model,
                          RedirectAttributes redirectAttributes,
+                         HttpServletRequest request,
                          HttpServletResponse response) {
+        if (!SameOrigin.isSameOriginPost(request)) {
+            throw new ForbiddenException("lookup not posted from this site");
+        }
+        if (honeypot != null && !honeypot.isEmpty()) {
+            log.info("Lookup discarded: honeypot field filled");
+            redirectAttributes.addAttribute("r", resultsTokens.encode(new ResultsLink(
+                    null, null, null, null, null, null, null, clock.instant().getEpochSecond())));
+            return "redirect:/results";
+        }
         if (bindingResult.hasErrors()) {
             // Blank or over 200 characters: the form again, with the field error, as a 400.
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
