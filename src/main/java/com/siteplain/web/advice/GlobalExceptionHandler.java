@@ -1,13 +1,18 @@
 package com.siteplain.web.advice;
 
 import com.siteplain.service.ServiceBusyException;
+import com.siteplain.support.ThrottledLog;
 import com.siteplain.web.BadRequestException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.time.Duration;
 import java.util.Set;
+import java.util.function.LongSupplier;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.TypeMismatchException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -24,14 +29,33 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
- * Client mistakes (missing or malformed parameters, the wrong method) get a 4xx and one WARN line
- * naming the exception type, never a stack trace or the submitted value. Everything else is a real
- * server error: 500, logged at ERROR with the stack trace.
+ * Client mistakes (missing or malformed parameters, the wrong method) get a 4xx and a WARN line
+ * naming the exception type, never a stack trace or the submitted value. Those lines are throttled
+ * (ThrottledLog): at most one a minute per status and exception type, with a count, so a scanner
+ * sending thousands of bad requests cannot flood the log. Everything else is a real server error:
+ * 500, logged at ERROR with the stack trace, never throttled.
  */
 @ControllerAdvice
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+    static final Duration DEFAULT_CLIENT_ERROR_INTERVAL = Duration.ofMinutes(1);
+
+    private final ThrottledLog clientErrors;
+
+    /** For standalone MockMvc setups: the production interval. */
+    public GlobalExceptionHandler() {
+        this(DEFAULT_CLIENT_ERROR_INTERVAL);
+    }
+
+    @Autowired
+    public GlobalExceptionHandler(@Value("${siteplain.logging.clientErrorInterval:60s}") Duration clientErrorInterval) {
+        this(clientErrorInterval, System::currentTimeMillis);
+    }
+
+    GlobalExceptionHandler(Duration clientErrorInterval, LongSupplier currentMillis) {
+        this.clientErrors = new ThrottledLog(log, clientErrorInterval.toMillis(), currentMillis);
+    }
 
     @ExceptionHandler(NoResourceFoundException.class)
     public String handleNotFound(NoResourceFoundException exception, HttpServletResponse response, Model model) {
@@ -106,10 +130,14 @@ public class GlobalExceptionHandler {
         return "error/not-found";
     }
 
-    private static void logClientError(int status, Exception exception, HttpServletRequest request) {
-        // The path only: the query string can hold an address.
+    /**
+     * One throttled WARN per status and exception type: the line shows the latest request's method, path
+     * and exception (the path only; the query string can hold an address) and how many it stands for.
+     */
+    private void logClientError(int status, Exception exception, HttpServletRequest request) {
+        String type = exception.getClass().getSimpleName();
         String detail = exception instanceof BadRequestException ? ": " + exception.getMessage() : "";
-        log.warn("Client error {} on {} {} ({}{})", status, request.getMethod(), request.getRequestURI(),
-                exception.getClass().getSimpleName(), detail);
+        clientErrors.warn(status + " " + type, "Client error " + status + " on " + request.getMethod() + " "
+                + request.getRequestURI() + " (" + type + detail + ")");
     }
 }
