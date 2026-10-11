@@ -19,6 +19,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -511,21 +512,41 @@ class PageRenderingIntegrationTest {
     }
 
     @Test
-    void resultsPages_areNoindexAndRobotsTxtDisallowsResultsAndApi() throws Exception {
+    void resultsPages_areNoindexByMetaAndHeaderAndRobotsTxtLetsCrawlersSeeIt() throws Exception {
         String noindex = "<meta name=\"robots\" content=\"noindex\">";
-        assertThat(page(results(39.825, -84.055, "1 Main St, Dayton, OH", "OH", null), 200)).contains(noindex);
-        assertThat(page(results(38.5, -116.5, "Somewhere, NV", "NV", null), 200)).contains(noindex);
-        assertThat(page(get("/results").param("error", "unresolved"), 200)).contains(noindex);
-        assertThat(page(get("/results").param("lat", "39.825").param("lng", "-84.055"), 200)).contains(noindex);
-        // Pages meant for search engines stay indexable.
-        assertThat(page(get("/site/OHR000000001"), 200)).doesNotContain("noindex");
-        assertThat(page(get("/"), 200)).doesNotContain("noindex");
+        assertThat(noindexPage(results(39.825, -84.055, "1 Main St, Dayton, OH", "OH", null), 200)).contains(noindex);
+        assertThat(noindexPage(results(38.5, -116.5, "Somewhere, NV", "NV", null), 200)).contains(noindex);
+        assertThat(noindexPage(get("/results").param("error", "unresolved"), 200)).contains(noindex);
+        // Old links that put the typed address in the URL: these are the indexed URLs that must drop out.
+        assertThat(noindexPage(get("/results").param("lat", "39.825").param("lng", "-84.055")
+                .param("address", "12 Elm Street, Dayton, OH"), 200)).contains(noindex);
+        // Error pages and the PDF under /results carry the header too.
+        noindexPage(get("/results").param("lat", "abc").param("lng", "1"), 400);
+        noindexPage(get("/results").param("r", "not-a-real-link"), 400);
+        noindexPage(get("/results/pdf").param("lat", "39.825").param("lng", "-84.055"), 200);
+        noindexPage(get("/results/pdf").param("r", "not-a-real-link"), 400);
 
+        // Pages meant for search engines stay indexable.
+        for (String path : List.of("/", "/site/OHR000000001", "/state/OH", "/about")) {
+            MockHttpServletResponse response = mockMvc.perform(get(path)).andExpect(status().isOk()).andReturn().getResponse();
+            assertThat(response.getHeader("X-Robots-Tag")).as(path).isNull();
+            assertThat(response.getContentAsString()).as(path).doesNotContain("noindex");
+        }
+
+        // A crawler may fetch /results, or it would never read the noindex and old results URLs would stay indexed.
         String robots = page(get("/robots.txt"), 200);
-        assertThat(robots).containsPattern("(?m)^Disallow: /results$")
+        assertThat(robots).doesNotContainPattern("(?m)^Disallow: /results")
                 .containsPattern("(?m)^Disallow: /api/$")
                 .containsPattern("(?m)^Sitemap: https://site-plain\\.com/sitemap\\.xml$")
                 .doesNotContain("Disallow: /\n");
+    }
+
+    private String noindexPage(MockHttpServletRequestBuilder request, int expectedStatus) throws Exception {
+        MockHttpServletResponse response = mockMvc.perform(request)
+                .andExpect(status().is(expectedStatus))
+                .andReturn().getResponse();
+        assertThat(response.getHeader("X-Robots-Tag")).as(request.toString()).isEqualTo("noindex");
+        return response.getContentAsString();
     }
 
     /** GET /results with an encrypted link, as POST /lookup would have issued it. */

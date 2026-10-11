@@ -1,7 +1,9 @@
 User-agent: *
 Allow: /
-# Results describe one person's lookup, and /api/ serves the search box: neither belongs in search engines.
-Disallow: /results
+# /api/ serves the search box and does not belong in search engines.
+# /results is deliberately not disallowed: results pages answer with a noindex meta tag and an
+# X-Robots-Tag header, and a crawler only sees those when it is allowed to fetch the page. That is
+# what removes results URLs indexed before the noindex was added.
 Disallow: /api/
 
 Sitemap: https://site-plain.com/sitemap.xml

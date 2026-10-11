@@ -9,6 +9,7 @@ import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.util.UrlPathHelper;
 
 /**
  * Security headers on every response: pages, static files, JSON, the PDF, redirects, error pages and
@@ -36,6 +37,11 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * Violations are reported to /csp-report (CspReportController), which logs them, so report-only mode
  * shows in the app log what enforce mode would block. report-uri only: with report-to present Chrome
  * ignores report-uri and queues reports for the Reporting API, which delivered none in testing.
+ *
+ * <p>Responses under /results (the page, its PDF, and their error and busy pages) also carry
+ * {@code X-Robots-Tag: noindex}: each one is a single person's lookup. robots.txt must not disallow
+ * /results, or crawlers never fetch these URLs and never see the noindex, and results URLs indexed
+ * before it was added (some held typed addresses) would stay in search results.
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 10)
@@ -68,6 +74,12 @@ public class SecurityHeadersFilter extends OncePerRequestFilter {
     public static final String PERMISSIONS_POLICY = "accelerometer=(), camera=(), geolocation=(), gyroscope=(), "
             + "magnetometer=(), microphone=(), payment=(), usb=()";
 
+    public static final String X_ROBOTS_TAG = "X-Robots-Tag";
+    public static final String NOINDEX = "noindex";
+
+    /** Set on the request so the error dispatch, whose path is the error page's, keeps the noindex. */
+    private static final String NOINDEX_ATTRIBUTE = SecurityHeadersFilter.class.getName() + ".noindex";
+
     private final String cspHeaderName;
 
     public SecurityHeadersFilter(SecurityProperties properties) {
@@ -94,6 +106,16 @@ public class SecurityHeadersFilter extends OncePerRequestFilter {
             // Browsers ignore HSTS received over plain HTTP; the edge redirects http:// to https://.
             response.setHeader("Strict-Transport-Security", STRICT_TRANSPORT_SECURITY);
         }
+        if (request.getAttribute(NOINDEX_ATTRIBUTE) != null || isResultsPath(request)) {
+            request.setAttribute(NOINDEX_ATTRIBUTE, Boolean.TRUE);
+            response.setHeader(X_ROBOTS_TAG, NOINDEX);
+        }
         filterChain.doFilter(request, response);
+    }
+
+    /** /results and everything under it, after decoding and dropping ;parameters, as Spring matches it. */
+    static boolean isResultsPath(HttpServletRequest request) {
+        String path = UrlPathHelper.defaultInstance.getPathWithinApplication(request);
+        return path.equals("/results") || path.startsWith("/results/");
     }
 }

@@ -68,6 +68,31 @@ class SecurityHeadersFilterTest {
     }
 
     @Test
+    void resultsPaths_getNoindexHeader_otherPathsDoNot() throws Exception {
+        for (String uri : List.of("/results", "/results/pdf", "/results;jsessionid=x", "/%72esults/pdf")) {
+            assertThat(filter(SecurityProperties.CspMode.ENFORCE, get(uri)).getHeader("X-Robots-Tag")).as(uri).isEqualTo("noindex");
+        }
+        for (String uri : List.of("/", "/site/OHD000000001", "/state/OH", "/resultsx", "/api/site-search/suggestions", "/lookup")) {
+            assertThat(filter(SecurityProperties.CspMode.ENFORCE, get(uri)).getHeader("X-Robots-Tag")).as(uri).isNull();
+        }
+    }
+
+    @Test
+    void resultsErrorDispatch_keepsNoindexHeader() throws Exception {
+        SecurityHeadersFilter filter = filter(SecurityProperties.CspMode.ENFORCE);
+        MockHttpServletRequest request = get("/results/pdf");
+        filter.doFilter(request, new MockHttpServletResponse(), new MockFilterChain());
+
+        // The container forwards to its error page, so the request URI is no longer /results.
+        request.setDispatcherType(DispatcherType.ERROR);
+        request.setRequestURI("/error");
+        MockHttpServletResponse errorResponse = new MockHttpServletResponse();
+        filter.doFilter(request, errorResponse, new MockFilterChain());
+
+        assertThat(errorResponse.getHeader("X-Robots-Tag")).isEqualTo("noindex");
+    }
+
+    @Test
     void policy_isStrict() {
         Map<String, String> directives = directives();
 
@@ -112,6 +137,10 @@ class SecurityHeadersFilterTest {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/");
         request.setSecure(secure);
         return request;
+    }
+
+    private static MockHttpServletRequest get(String uri) {
+        return new MockHttpServletRequest("GET", uri);
     }
 
     private static SecurityHeadersFilter filter(SecurityProperties.CspMode mode) {
