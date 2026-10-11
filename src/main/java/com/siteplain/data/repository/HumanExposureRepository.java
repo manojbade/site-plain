@@ -3,7 +3,6 @@ package com.siteplain.data.repository;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,7 +24,13 @@ public class HumanExposureRepository {
         jdbcTemplate.update("TRUNCATE npl_human_exposure_staging");
     }
 
-    /** Plain INSERT: the loader rejects a feed with duplicate epaids instead of letting the last one win. */
+    /**
+     * Plain INSERT: the loader rejects a feed with duplicate epaids instead of letting the last one win.
+     * loaded_at comes from the database clock (LOCALTIMESTAMP, in the session time zone the driver sets
+     * from the JVM), the same clock as the now() recorded in data_source_state when the rows go live.
+     * liveMatchesRecord compares the two, so with the app clock a few milliseconds ahead of the
+     * database the rows looked newer than their own record and an unchanged feed was staged again.
+     */
     public void insertStaging(String epaId,
                               String statusCode,
                               String pathwayDescription,
@@ -36,10 +41,9 @@ public class HumanExposureRepository {
         jdbcTemplate.update("""
                 INSERT INTO npl_human_exposure_staging
                   (epa_id, humexposurestscode, humanexposurepathdesc, npl_status, site_name, state_code, epa_url, loaded_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, LOCALTIMESTAMP)
                 """,
-                epaId, statusCode, pathwayDescription, nplStatus, siteName, stateCode, epaUrl,
-                Timestamp.valueOf(LocalDateTime.now()));
+                epaId, statusCode, pathwayDescription, nplStatus, siteName, stateCode, epaUrl);
     }
 
     public int stagingCount() {
