@@ -35,11 +35,32 @@ class ResultsPdfServiceTest {
 
         assertThat(html).contains("<td>EPA exposure status as of</td>")
                 .contains("<td>October 10, 2026</td>")
-                .contains("Approximate location.")
-                .contains("only to the following\n      <span>city</span>");
+                .contains("<p class=\"notice-title\">Approximate location</p>");
+        assertThat(html.replaceAll("\\s+", " ")).contains("only to the following <span>city</span>: "
+                + "<span>57 Salem Street, Woburn, MA 01801</span>.");
 
         context.setVariable("viewModel", viewModel(null));
-        assertThat(templateEngine().process("results-pdf", context)).doesNotContain("Approximate location.");
+        assertThat(templateEngine().process("results-pdf", context)).doesNotContain("Approximate location");
+    }
+
+    @Test
+    void pdfTemplate_usesTheRestrainedStatusTreatmentAndPluralizesTheCount() {
+        Context context = new Context(Locale.US);
+        context.setVariable("viewModel", viewModel(null));
+        context.setVariable("generatedOn", "October 10, 2026");
+        String html = templateEngine().process("results-pdf", context);
+
+        assertThat(html).contains("1 active Superfund site found within 3 miles")
+                .doesNotContain("site(s)")
+                // HENC: red square and red text, the only alarm color.
+                .contains("<span class=\"swatch swatch-red\"></span><span>Human exposure is NOT currently under control</span>")
+                .contains("<p class=\"status status-red\">")
+                .contains("<td class=\"value alert-text\">1</td>")
+                .contains("<td class=\"value\">0.3 mi</td>")
+                .contains("Site Plain | site-plain.com | Generated <span>October 10, 2026</span>")
+                .doesNotContain("border-radius")
+                .doesNotContain("text-transform: uppercase")
+                .doesNotContain("\u2014");
     }
 
     private static ResultsViewModel viewModel(String approximateMatch) {

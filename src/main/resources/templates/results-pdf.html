@@ -3,171 +3,267 @@
 <head>
   <meta charset="UTF-8" />
   <title>Site Plain Results PDF</title>
+  <!--/* Rendered server side by openhtmltopdf, never served to a browser, so this style block is outside the CSP.
+         Same restrained look as the web pages: ink text, solid rules, square corners, no fills. Helvetica because
+         openhtmltopdf cannot load Public Sans from Google Fonts. */-->
   <style>
     @page {
-      margin: 0.7in;
+      margin: 0.7in 0.7in 0.85in;
       size: letter;
+
+      @bottom-left {
+        content: element(pdf-footer);
+      }
+
+      @bottom-right {
+        color: #55667a;
+        content: "Page " counter(page) " of " counter(pages);
+        font-family: Helvetica, Arial, sans-serif;
+        font-size: 8.5pt;
+      }
     }
 
     body {
-      color: #1f2520;
+      color: #11263d;
       font-family: Helvetica, Arial, sans-serif;
-      font-size: 11pt;
+      font-size: 10.5pt;
       line-height: 1.45;
       margin: 0;
     }
 
-    .report-header {
-      border-bottom: 1px solid #d8d2c8;
-      margin-bottom: 18px;
-      padding-bottom: 14px;
+    p {
+      margin: 0 0 6px;
+    }
+
+    a {
+      color: #7a5822;
+      word-wrap: break-word;
+    }
+
+    .pdf-footer {
+      color: #55667a;
+      font-size: 8.5pt;
+      position: running(pdf-footer);
+    }
+
+    .masthead {
+      border-bottom: 2px solid #11263d;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
     }
 
     .brand {
       font-size: 18pt;
-      font-weight: 700;
-      margin: 0 0 2px;
+      font-weight: bold;
+      line-height: 1.1;
+      margin: 0;
     }
 
     .brand-link {
-      color: #5e523b;
+      color: #55667a;
       font-size: 10pt;
-      margin: 0;
+      margin: 2px 0 0;
+    }
+
+    .context {
+      font-size: 11pt;
+      font-weight: bold;
+      margin: 0 0 4px;
     }
 
     .report-title {
       font-size: 20pt;
-      margin: 18px 0 4px;
+      font-weight: bold;
+      line-height: 1.15;
+      margin: 0 0 6px;
     }
 
-    .eyebrow {
-      color: #6a6358;
-      font-size: 9pt;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      margin: 0;
-      text-transform: uppercase;
+    .subtitle {
+      font-size: 11pt;
+      margin: 0 0 12px;
     }
 
     .muted {
-      color: #6a6358;
+      color: #55667a;
     }
 
-    .summary-box,
-    .site-card,
-    .disclaimer-box {
-      border: 1px solid #d8d2c8;
-      border-radius: 10px;
-      margin-bottom: 14px;
-      padding: 14px 16px;
+    .notice {
+      border-left: 3px solid #11263d;
+      margin: 0 0 14px;
+      padding: 1px 0 1px 10px;
     }
 
-    .summary-grid {
+    .notice-title {
+      font-weight: bold;
+    }
+
+    .section-title {
+      border-bottom: 2px solid #11263d;
+      font-size: 12pt;
+      font-weight: bold;
+      margin: 18px 0 8px;
+      padding-bottom: 3px;
+      page-break-after: avoid;
+    }
+
+    .facts {
+      border-collapse: collapse;
+      margin: 0 0 6px;
       width: 100%;
     }
 
-    .summary-grid td {
+    .facts td {
+      border-bottom: 1px solid #dde1e6;
       padding: 4px 0;
       vertical-align: top;
     }
 
-    .summary-grid td:first-child {
-      color: #6a6358;
+    .facts td:first-child {
+      color: #55667a;
       padding-right: 14px;
-      width: 140px;
+      width: 215px;
     }
 
-    .site-card {
+    .facts td.value {
+      font-weight: bold;
+    }
+
+    .alert-text {
+      color: #9b1c1c;
+    }
+
+    .site {
+      border-top: 1px solid #dde1e6;
+      padding: 10px 0 8px;
       page-break-inside: avoid;
     }
 
-    .site-title {
-      font-size: 14pt;
-      font-weight: 700;
-      margin: 0 0 8px;
+    .site-first {
+      border-top: none;
+      padding-top: 2px;
     }
 
-    .site-meta {
-      margin: 0 0 8px;
+    .site-head {
+      border-collapse: collapse;
+      margin: 0 0 2px;
+      width: 100%;
     }
 
-    .badge {
-      border-radius: 999px;
+    .site-head td {
+      padding: 0;
+      vertical-align: top;
+    }
+
+    .site-name {
+      font-size: 13pt;
+      font-weight: bold;
+      line-height: 1.25;
+      padding-right: 12px;
+    }
+
+    .site-distance {
+      font-weight: bold;
+      text-align: right;
+      width: 190px;
+    }
+
+    .inside {
+      border-bottom: 2px solid #11263d;
+    }
+
+    .status {
+      font-weight: bold;
+      margin: 4px 0 6px;
+    }
+
+    .swatch {
+      border: 1px solid #11263d;
       display: inline-block;
+      height: 9px;
+      margin-right: 6px;
+      width: 9px;
+    }
+
+    .swatch-red {
+      background: #9b1c1c;
+      border-color: #9b1c1c;
+    }
+
+    .swatch-yellow {
+      background: #b8860b;
+      border-color: #b8860b;
+    }
+
+    .swatch-green {
+      background: #2d7a46;
+      border-color: #2d7a46;
+    }
+
+    .swatch-gray {
+      background: #ffffff;
+      border-color: #6c757d;
+    }
+
+    .status-red {
+      color: #9b1c1c;
+    }
+
+    .status-gray {
+      color: #55667a;
+    }
+
+    .legend {
+      color: #55667a;
       font-size: 9pt;
-      font-weight: 700;
-      padding: 4px 10px;
-    }
-
-    .badge-green {
-      background: #dceedd;
-      color: #235a2f;
-    }
-
-    .badge-yellow {
-      background: #fff1c7;
-      color: #8a6a00;
-    }
-
-    .badge-red {
-      background: #f8d9d5;
-      color: #8e2a1f;
-    }
-
-    .badge-gray {
-      background: #ebebeb;
-      color: #4f4f4f;
-    }
-
-    a {
-      color: #1f2520;
-      word-wrap: break-word;
-    }
-
-    .disclaimer-title {
-      font-size: 12pt;
-      font-weight: 700;
       margin: 0 0 8px;
+    }
+
+    .legend-item {
+      margin-right: 12px;
+      white-space: nowrap;
+    }
+
+    .legend .swatch {
+      height: 8px;
+      margin-right: 4px;
+      width: 8px;
+    }
+
+    .plain-list {
+      margin: 0;
+      padding-left: 16px;
+    }
+
+    .scope-note {
+      border-left: 3px solid #11263d;
+      color: #55667a;
+      font-size: 9.5pt;
+      margin: 22px 0 0;
+      padding: 1px 0 1px 10px;
+      page-break-inside: avoid;
+    }
+
+    .scope-note-title {
+      color: #11263d;
+      font-weight: bold;
     }
   </style>
 </head>
 <body>
-  <div class="report-header">
+  <div class="pdf-footer">Site Plain | site-plain.com | Generated <span th:text="${generatedOn}">April 3, 2026</span></div>
+
+  <div class="masthead">
     <p class="brand">Site Plain</p>
     <p class="brand-link" th:text="${siteBaseUrl}">https://site-plain.com</p>
-    <p class="eyebrow">Superfund lookup report</p>
-    <h1 class="report-title" th:text="${viewModel.normalizedAddress}">Resolved address</h1>
-    <p class="muted" th:text="${viewModel.resultCount} + ' active Superfund site(s) found within 3 miles'">0 active sites found</p>
   </div>
 
-  <div class="summary-box">
-    <table class="summary-grid">
-      <tr>
-        <td>Report date</td>
-        <td th:text="${generatedOn}">April 3, 2026</td>
-      </tr>
-      <tr>
-        <td>Queried address</td>
-        <td th:text="${viewModel.inputAddress}">57 Salem Street, Woburn, MA 01801</td>
-      </tr>
-      <tr>
-        <td>Resolved address</td>
-        <td th:text="${viewModel.normalizedAddress}">57 Salem Street, Woburn, MA 01801</td>
-      </tr>
-      <tr th:if="${viewModel.exposureStatusAsOf != null}">
-        <td>EPA exposure status as of</td>
-        <td th:text="${viewModel.exposureStatusAsOf}">October 10, 2026</td>
-      </tr>
-      <tr>
-        <td>Method</td>
-        <td>Distance to EPA site boundary polygon, not centroid</td>
-      </tr>
-    </table>
-  </div>
+  <p class="context">Superfund lookup report</p>
+  <h1 class="report-title" th:text="${viewModel.normalizedAddress}">Resolved address</h1>
+  <p class="subtitle" th:text="${viewModel.resultCountSentence()}">0 active Superfund sites found within 3 miles</p>
 
-  <div class="summary-box" th:if="${viewModel.approximateMatch != null}">
-    <p><strong>Approximate location.</strong></p>
-    <p class="muted">
+  <div class="notice" th:if="${viewModel.approximateMatch != null}">
+    <p class="notice-title">Approximate location</p>
+    <p>
       This address could not be matched to a house or building, only to the following
       <span th:text="${viewModel.approximateMatch}">city</span>:
       <span th:text="${viewModel.normalizedAddress}">Woburn, Massachusetts</span>.
@@ -175,52 +271,102 @@
     </p>
   </div>
 
-  <div th:if="${viewModel.hasSites}">
-    <div class="site-card" th:each="site : ${viewModel.sites}">
-      <h2 class="site-title" th:text="${site.siteName}">Site name</h2>
-      <p class="site-meta">
-        <strong>EPA ID:</strong> <span th:text="${site.epaId}">TEST001</span><br />
-        <strong>State:</strong> <span th:text="${site.stateCode}">GA</span><br />
-        <strong>Distance:</strong> <span th:text="${T(com.siteplain.support.DistanceFormatter).format(site.distanceMeters)}">0.4 miles</span>
-      </p>
-      <p>
-        <span th:classappend="${
-            site.exposureStatusColor == 'green' ? ' badge-green' :
-            site.exposureStatusColor == 'yellow' ? ' badge-yellow' :
-            site.exposureStatusColor == 'red' ? ' badge-red' : ' badge-gray'
-          }"
-          class="badge"
-          th:text="${site.exposureStatusLabel}">
-          Human exposure is under control
-        </span>
+  <h2 class="section-title">Report details</h2>
+  <table class="facts">
+    <tr>
+      <td>Report date</td>
+      <td th:text="${generatedOn}">April 3, 2026</td>
+    </tr>
+    <tr>
+      <td>Queried address</td>
+      <td th:text="${viewModel.inputAddress}">57 Salem Street, Woburn, MA 01801</td>
+    </tr>
+    <tr>
+      <td>Resolved address</td>
+      <td th:text="${viewModel.normalizedAddress}">57 Salem Street, Woburn, MA 01801</td>
+    </tr>
+    <tr th:if="${viewModel.exposureStatusAsOf != null}">
+      <td>EPA exposure status as of</td>
+      <td th:text="${viewModel.exposureStatusAsOf}">October 10, 2026</td>
+    </tr>
+    <tr>
+      <td>Method</td>
+      <td>Distance to EPA site boundary polygon, not centroid</td>
+    </tr>
+  </table>
+
+  <th:block th:if="${viewModel.hasSites}">
+    <h2 class="section-title">Summary</h2>
+    <table class="facts" th:with="red=${viewModel.statusCount('red')}">
+      <tr>
+        <td>Active sites within 3 miles</td>
+        <td class="value" th:text="${viewModel.resultCount}">1</td>
+      </tr>
+      <tr>
+        <td>Nearest site boundary</td>
+        <td class="value" th:text="${viewModel.nearestDistanceShort()}">0.8 mi</td>
+      </tr>
+      <tr>
+        <td>Exposure not under control</td>
+        <td class="value" th:classappend="${red > 0} ? 'alert-text'" th:text="${red}">0</td>
+      </tr>
+      <tr>
+        <td>Insufficient data or not reported</td>
+        <td class="value" th:text="${viewModel.statusCount('gray')}">0</td>
+      </tr>
+    </table>
+
+    <h2 class="section-title">Sites by distance</h2>
+    <p class="legend">
+      EPA human exposure status:
+      <span class="legend-item"><span class="swatch swatch-red"></span>Not under control</span>
+      <span class="legend-item"><span class="swatch swatch-yellow"></span>Under control</span>
+      <span class="legend-item"><span class="swatch swatch-green"></span>Long-term protection achieved</span>
+      <span class="legend-item"><span class="swatch swatch-gray"></span>Insufficient data or not reported</span>
+    </p>
+    <div class="site" th:each="site, iter : ${viewModel.sites}" th:classappend="${iter.first} ? 'site-first'"
+         th:with="color=${site.exposureStatusColor != null ? site.exposureStatusColor : 'gray'}">
+      <table class="site-head">
+        <tr>
+          <td class="site-name" th:text="${site.siteName}">Site name</td>
+          <td class="site-distance">
+            <span th:classappend="${site.distanceMeters <= 0} ? 'inside'"
+                  th:text="${T(com.siteplain.support.DistanceFormatter).format(site.distanceMeters)}">0.4 miles</span>
+          </td>
+        </tr>
+      </table>
+      <p class="muted">EPA ID <span th:text="${site.epaId}">TEST001</span> &#183; <span th:text="${site.stateCode}">GA</span></p>
+      <p class="status" th:classappend="${color == 'red'} ? 'status-red' : (${color == 'gray'} ? 'status-gray' : '')">
+        <span class="swatch" th:classappend="'swatch-' + ${color}"></span><span th:text="${site.exposureStatusLabel}">Human exposure is under control</span>
       </p>
       <p th:if="${site.exposurePathwayDescription != null and !#strings.isEmpty(site.exposurePathwayDescription)}">
         <strong>EPA pathway note:</strong>
         <span th:utext="${site.exposurePathwayDescription}">EPA text</span>
       </p>
       <p>
-        <strong>EPA site profile:</strong><br />
+        <strong>EPA site profile:</strong>
         <a th:href="${site.effectiveEpaUrl()}" th:text="${site.effectiveEpaUrl()}">https://epa.example</a>
       </p>
     </div>
-  </div>
+  </th:block>
 
-  <div class="summary-box" th:if="${!viewModel.hasSites}">
+  <th:block th:if="${!viewModel.hasSites}">
+    <h2 class="section-title">Sites by distance</h2>
     <p><strong>No active EPA Superfund sites were found within 3 miles of this address.</strong></p>
     <p class="muted">Absence from this list does not mean an area is free from contamination.</p>
-  </div>
+  </th:block>
 
-  <div class="summary-box" th:if="${!viewModel.stateSitesWithoutBoundary.isEmpty()}">
-    <p><strong>Active sites in this state with no published boundary</strong></p>
+  <th:block th:if="${!viewModel.stateSitesWithoutBoundary.isEmpty()}">
+    <h2 class="section-title">Active sites in this state with no published boundary</h2>
     <p class="muted">EPA has not published a boundary for these active sites, so their distance from this address cannot be calculated and they are not included above:</p>
-    <p>
-      <span th:each="site, iter : ${viewModel.stateSitesWithoutBoundary}"
-            th:text="${site.siteName} + ' (' + ${site.epaId} + ')' + (${iter.last} ? '' : '; ')">Site name (EPA ID)</span>
-    </p>
-  </div>
+    <ul class="plain-list">
+      <li th:each="site : ${viewModel.stateSitesWithoutBoundary}"
+          th:text="${site.siteName} + ' (' + ${site.epaId} + ')'">Site name (EPA ID)</li>
+    </ul>
+  </th:block>
 
-  <div class="disclaimer-box">
-    <p class="disclaimer-title">Built from public federal data. Distance is not exposure.</p>
+  <div class="scope-note">
+    <p class="scope-note-title">Built from public federal data. Distance is not exposure.</p>
     <p>
       Proximity to a Superfund site boundary does not mean your property is contaminated. EPA boundaries show the cleanup
       area, not the full extent of contamination. Groundwater plumes can extend beyond site boundaries. This tool is not
