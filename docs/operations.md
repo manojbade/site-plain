@@ -26,7 +26,7 @@ Contents:
 - Build: Railpack builds the Maven project on Railway and starts the jar with `java $JAVA_OPTS -jar` (it also passes Railway's `PORT`).
 - Container limit 8 GB / 8 vCPU. Without `JAVA_OPTS` the JVM takes a 2 GB max heap and G1 (see [JAVA_OPTS](#java_opts)).
 - The app reaches Postgres on Railway's private network (`postgres-postgis.railway.internal`). Cloudflare sits in front of `site-plain.com`.
-- State: only the database. The container filesystem is thrown away on every deploy, and the Postgres service has no volume yet ([owner actions](#owner-actions)).
+- State: only the database. The container filesystem is thrown away on every deploy. Since 2026-10-11 the Postgres data lives on a persistent volume (`postgres-postgis-volume`, mounted at `/var/lib/postgresql/data`, `PGDATA=/var/lib/postgresql/data/pgdata`, 5 GB), so it survives Postgres restarts and redeploys.
 
 ---
 
@@ -278,7 +278,7 @@ Leave the Hikari pool (10) and Postgres settings alone: each is worth under $0.3
 
 ## Backups
 
-With no Postgres volume today, a backup is the only protection for `lookup_audit` and `feedback`. Take one before any Postgres change and on a schedule you can keep (monthly at least). It needs a way to reach the database from your machine: the `postgres-postgis` TCP proxy (enable it, back up, disable it again), with the connection details from the Postgres service's variables.
+The volume keeps data across restarts, but it is not a backup: a bad migration, a mistaken delete or a lost volume still loses `lookup_audit` and `feedback`. Take a backup before any Postgres change and on a schedule you can keep (monthly at least). It needs a way to reach the database from your machine: the `postgres-postgis` TCP proxy (enable it, back up, disable it again), with the connection details from the Postgres service's variables.
 
 ```bash
 PGPASSWORD='<password>' pg_dump -Fc -h <proxy host> -p <proxy port> -U postgres -d railway \
@@ -332,7 +332,7 @@ Without `TEST_DATASOURCE_URL` the integration tests are skipped, so always set i
 
 Railway and third-party settings the code cannot make. Each needs the owner.
 
-1. **Postgres volume.** `postgres-postgis` keeps its data on the container's own disk: any restart or redeploy of Postgres loses the database, and with it `lookup_audit` and `feedback` (site data reloads from the sources). Fix in a short window: take a backup ([Backups](#backups)) and check its row counts; attach a volume to `postgres-postgis` at `/var/lib/postgresql/data` and set `PGDATA=/var/lib/postgresql/data/pgdata` on it (so initdb does not trip over `lost+found`); after Postgres comes back empty, restore the dump; restart the app. Check first whether the unattached project volumes `postgres-volume` and `postgres-volume-Tomf` hold older data. Cost is a few cents a month.
+1. **Postgres volume.** Done on 2026-10-11: `postgres-postgis-volume` attached at `/var/lib/postgresql/data` with `PGDATA=/var/lib/postgresql/data/pgdata`, the pre-migration backup restored (all row counts identical), and the app restarted. To repeat this kind of move: back up and record row counts, attach the volume and set `PGDATA` with `--skip-deploys`, let Postgres come back empty, restore with `pg_restore --no-owner` (4 expected messages: schemas `tiger`, `tiger_data`, `topology` already exist, and `transaction_timeout` is unknown to Postgres 16), compare the counts, restart the app.
 2. **Database password rotation.** The app connects as the `postgres` superuser, and that password has been stored on a development machine. Rotate it: change the password on `postgres-postgis` (and in its `POSTGRES_PASSWORD`), set the same value in the app's `SPRING_DATASOURCE_PASSWORD` with `--skip-deploys`, then redeploy the app; a mismatch means a short outage, so do both together. Later: a separate least-privilege role for the app.
 3. **TCP proxy.** The Postgres TCP proxy is public and the server runs with `ssl=off`, so a session over it is plaintext. The app does not use it (private network). Keep it disabled. Prod data checks do not need it: verify loads from the deploy logs ([data README 6.1](data/README.md#61-prod-check-from-the-deploy-logs)). Enable it only for a backup or for an optional SQL check, and disable it again in the same sitting ([data README 6.2](data/README.md#62-sql-checks)).
 4. **Healthcheck.** Path `/actuator/health/readiness`, timeout 600 s ([Healthcheck](#healthcheck)).

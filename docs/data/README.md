@@ -141,7 +141,7 @@ Adoption trusts the configured URL; it cannot tell which file the live rows came
 - `/actuator/health/liveness` is 200 once the context has started. `/actuator/health` is 200 during the startup refresh too and lists both groups.
 - The two probe paths answer on any host and over plain HTTP. Every other path, `/actuator/health` included, redirects to `https://site-plain.com` in prod.
 
-Railway containers are ephemeral. The database is the only state, and today the Postgres service has no volume (see the owner actions in [operations](../operations.md#owner-actions)), so a Postgres restart loses everything. Data in `npl_*` tables can be reloaded from the sources ([5.5](#55-database-lost)); `lookup_audit` and `feedback` cannot.
+Railway containers are ephemeral. The database is the only state, and it lives on a persistent Postgres volume (since 2026-10-11, see [operations](../operations.md#owner-actions)), so Postgres restarts keep it. A lost volume or a bad change still needs a restore from backup. Data in `npl_*` tables can be reloaded from the sources ([5.5](#55-database-lost)); `lookup_audit` and `feedback` cannot.
 
 ---
 
