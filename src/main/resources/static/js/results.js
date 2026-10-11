@@ -11,6 +11,7 @@
     '#6c757d'
   ];
   var ADDRESS_PIN_COLOR = '#11263d';
+  var MAP_LABEL = 'Map of the address and nearby Superfund site boundaries, colored by EPA exposure status';
 
   function setUpShare() {
     var button = document.getElementById('share-btn');
@@ -75,6 +76,8 @@
       center: [lng, lat],
       zoom: 11
     });
+    // Mapbox labels its focusable canvas just "Map"; name what it shows.
+    map.getCanvas().setAttribute('aria-label', MAP_LABEL);
 
     map.on('load', function () {
       map.addSource('sites', { type: 'geojson', data: geojson });

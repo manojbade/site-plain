@@ -318,7 +318,13 @@ class PageRenderingIntegrationTest {
         assertThat(inside).contains("id=\"results-map\"")
                 .contains("data-geojson=\"{&quot;type&quot;:&quot;FeatureCollection&quot;")
                 .contains("data-lat=\"39.825\"")
-                .contains("role=\"img\"");
+                .doesNotContain("role=\"img\"");
+        // The map sits in a figure whose caption is the text equivalent; Mapbox's own canvas and
+        // attribution links inside the map element stay exposed to assistive technology.
+        assertThat(inside).containsPattern("<figure class=\"m-0\">\\s*<div id=\"results-map\"")
+                .containsPattern("</div>\\s*<figcaption class=\"tt-mini-note sp-map-caption mb-0\">Boundaries are colored");
+        assertThat(page(get("/js/results.js"), 200))
+                .contains("map.getCanvas().setAttribute('aria-label', MAP_LABEL);");
         assertThat(inside.indexOf("class=\"sp-site-list\"")).isPositive()
                 .isLessThan(inside.indexOf("id=\"results-map\""));
 

@@ -38,7 +38,7 @@ public class HomeController {
         return new HomePageViewModel(
                 repository.countActiveSites(),
                 "19.46 million",
-                "357 of 435",
+                "357",
                 repository.lastLoadedDate().orElse(null)
         );
     }

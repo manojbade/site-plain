@@ -143,13 +143,15 @@
       <!--/* Side column: below the site list under 1200px, so phones read the list before the map. */-->
       <div class="col-xl-4 align-self-start">
         <div class="tt-side-stack">
+          <!--/* No role on the map element: Mapbox renders a focusable canvas and attribution links inside it,
+               and they must stay exposed to screen readers. The figcaption and the site list carry the meaning. */-->
           <aside class="tt-side-card sp-map-card p-0 overflow-hidden" th:if="${viewModel.siteBoundaryGeojson != null}">
-            <div id="results-map"
-                 class="sp-results-map"
-                 role="img"
-                 aria-label="Map of the address and nearby Superfund site boundaries, colored by EPA exposure status"
-                 th:attr="data-mapbox-token=${viewModel.mapboxPublicToken},data-lat=${viewModel.lat},data-lng=${viewModel.lng},data-geojson=${viewModel.siteBoundaryGeojson}"></div>
-            <p class="tt-mini-note sp-map-caption mb-0">Boundaries are colored by EPA human exposure status, as in the key above the site list. The dark pin marks the address.</p>
+            <figure class="m-0">
+              <div id="results-map"
+                   class="sp-results-map"
+                   th:attr="data-mapbox-token=${viewModel.mapboxPublicToken},data-lat=${viewModel.lat},data-lng=${viewModel.lng},data-geojson=${viewModel.siteBoundaryGeojson}"></div>
+              <figcaption class="tt-mini-note sp-map-caption mb-0">Boundaries are colored by EPA human exposure status, as in the key above the site list. The dark pin marks the address.</figcaption>
+            </figure>
           </aside>
 
           <aside class="tt-side-card">

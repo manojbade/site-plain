@@ -86,7 +86,8 @@ class ShellPagesIntegrationTest {
         assertThat(ownFigure).isGreaterThan(epaFigure);
         assertThat(html).contains("href=\"" + EPA_POPULATION_PDF + "\"")
                 .contains("Population Surrounding 1,881 Superfund Sites</a>, updated July 2023.")
-                .contains("357 of 435 congressional districts")
+                .contains("357 congressional districts, counting DC and territorial delegate districts,")
+                .doesNotContain("of 435")
                 .contains("Source: Site Plain's own analysis, March 2026.")
                 .contains("href=\"/about#methodology\"")
                 .contains("<label class=\"form-label mb-2 tt-primary-input-label\" for=\"lookup-address\">")
