@@ -24,6 +24,8 @@ public class GlobalExceptionHandler {
     public String handleUnexpected(Exception exception, HttpServletResponse response, Model model) {
         log.error("Unhandled application error", exception);
         response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+        // The shared error template uses this to show server-error wording instead of "Page not found".
+        model.addAttribute("status", HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
         model.addAttribute("message", "The request could not be completed.");
         return "error/not-found";
     }

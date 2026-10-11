@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,follow">
+  <title>Thank you | Site Plain</title>
+  <th:block th:replace="~{fragments/head :: assets}"></th:block>
+</head>
+<body class="bg-page">
+<div th:replace="~{fragments/header :: header}"></div>
+<main class="container py-5">
+  <div class="row justify-content-center">
+    <div class="col-lg-7">
+      <div class="tt-surface">
+        <section class="tt-state-card">
+          <p class="eyebrow mb-2">Feedback</p>
+          <h1 class="h2 mb-3">Thank you for your feedback.</h1>
+          <p class="tt-muted-copy mb-4">Your note was received. I read every message.</p>
+          <div class="d-flex flex-wrap gap-2">
+            <a th:href="@{/}" class="btn tt-btn-primary">Back to Site Plain</a>
+            <a th:href="@{/about}" class="btn tt-btn-secondary">About Site Plain</a>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+</main>
+<div th:replace="~{fragments/footer :: footer}"></div>
+</body>
+</html>

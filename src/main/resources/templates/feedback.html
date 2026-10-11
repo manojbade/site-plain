@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Feedback | Site Plain</title>
+  <meta name="description" content="Send feedback about Site Plain, report a data issue, or suggest an improvement.">
+  <th:block th:replace="~{fragments/head :: assets}"></th:block>
+</head>
+<body class="bg-page">
+<div th:replace="~{fragments/header :: header}"></div>
+<main class="container py-5">
+  <div class="row justify-content-center">
+    <div class="col-xl-9">
+      <div class="tt-page-intro">
+        <p class="eyebrow mb-2">Feedback</p>
+        <h1 class="tt-page-title mb-3">Tell me what's wrong or missing.</h1>
+        <p class="tt-page-subtitle mb-0">
+          Report a bug, flag a data issue, or tell me what would make Site Plain more useful. I read every message.
+        </p>
+      </div>
+
+      <div class="row g-4">
+        <div class="col-lg-8">
+          <div class="tt-panel-card">
+            <h2 class="tt-card-kicker">Send feedback</h2>
+            <form th:action="@{/feedback}" method="post" class="row g-3">
+              <input type="hidden" name="pageType" th:value="${pageType}">
+              <input type="hidden" name="epaId" th:value="${epaId}" th:if="${epaId != null}">
+
+              <div class="col-12">
+                <fieldset class="sp-choice-group">
+                  <legend class="tt-field-label fs-6">Was Site Plain helpful? (optional)</legend>
+                  <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="radio" name="helpful" id="feedback-helpful-yes" value="true">
+                    <label class="form-check-label" for="feedback-helpful-yes">Yes</label>
+                  </div>
+                  <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="radio" name="helpful" id="feedback-helpful-no" value="false">
+                    <label class="form-check-label" for="feedback-helpful-no">No</label>
+                  </div>
+                </fieldset>
+              </div>
+
+              <div class="col-12">
+                <label class="form-label tt-field-label mb-2" for="feedback-message">Message</label>
+                <textarea class="form-control tt-input tt-feedback-textarea"
+                          id="feedback-message"
+                          name="comments"
+                          rows="7"
+                          maxlength="500"
+                          aria-describedby="feedback-message-note"
+                          placeholder="What happened, what you expected, or what would make this better."></textarea>
+                <div id="feedback-message-note" class="tt-mini-note mt-2">Up to 500 characters.</div>
+              </div>
+
+              <div class="col-12 d-flex flex-wrap gap-2">
+                <button class="btn tt-btn-primary" type="submit">Send feedback</button>
+                <a class="btn tt-btn-secondary" th:href="@{/}">Back to home</a>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <div class="col-lg-4">
+          <div class="tt-side-card h-100">
+            <h2 class="tt-card-kicker">Context</h2>
+            <div class="tt-system-facts">
+              <div class="tt-fact-row">
+                <span class="tt-fact-label">Sent from</span>
+                <span class="tt-fact-value" th:text="${pageType == 'general'} ? 'General site feedback' : ${#strings.capitalize(pageType)} + ' page'">General site feedback</span>
+              </div>
+              <div class="tt-fact-row">
+                <span class="tt-fact-label">EPA ID</span>
+                <span class="tt-fact-value" th:text="${epaId != null} ? ${epaId} : 'Not provided'">Not provided</span>
+              </div>
+            </div>
+            <p class="tt-mini-note mt-3 mb-0">
+              Feedback is stored in Site Plain to improve the tool. Do not include medical or other sensitive personal information.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+<div th:replace="~{fragments/footer :: footer}"></div>
+</body>
+</html>
