@@ -54,9 +54,10 @@
                           name="comments"
                           rows="7"
                           maxlength="500"
-                          aria-describedby="feedback-message-note"
+                          th:aria-describedby="${feedbackError != null} ? 'feedback-error feedback-message-note' : 'feedback-message-note'"
                           placeholder="What happened, what you expected, or what would make this better."></textarea>
                 <div id="feedback-message-note" class="tt-mini-note mt-2">Up to 500 characters.</div>
+                <div id="feedback-error" class="text-danger small mt-2" role="alert" th:if="${feedbackError != null}" th:text="${feedbackError}">Choose Yes or No, or write a message, before sending.</div>
               </div>
 
               <div class="col-12 d-flex flex-wrap gap-2">

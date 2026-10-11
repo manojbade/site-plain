@@ -164,6 +164,38 @@ class ShellPagesIntegrationTest {
     }
 
     @Test
+    void feedbackPost_withNoAnswerAndNoCommentIsA400FormAndSavesNothing() throws Exception {
+        int before = feedbackRows();
+        for (String comments : new String[] {null, "", "   \r\n  "}) {
+            var request = post("/feedback").param("pageType", "site").param("epaId", "ga1234567890");
+            if (comments != null) {
+                request.param("comments", comments);
+            }
+            String html = mockMvc.perform(request)
+                    .andExpect(status().isBadRequest())
+                    .andReturn().getResponse().getContentAsString();
+            // The feedback form again, with the note tied to the message box, and the page context kept.
+            assertThat(html).contains("<div id=\"feedback-error\" class=\"text-danger small mt-2\" role=\"alert\">"
+                            + "Choose Yes or No, or write a message, before sending.</div>")
+                    .contains("aria-describedby=\"feedback-error feedback-message-note\"")
+                    .contains("name=\"pageType\" value=\"site\"")
+                    .contains("name=\"epaId\" value=\"GA1234567890\"");
+        }
+        assertThat(feedbackRows()).isEqualTo(before);
+
+        // Either an answer or a comment alone is enough.
+        mockMvc.perform(post("/feedback").param("pageType", "general").param("helpful", "false"))
+                .andExpect(redirectedUrl("/feedback/thanks"));
+        jdbcTemplate.update("DELETE FROM feedback WHERE id = (SELECT max(id) FROM feedback)");
+        mockMvc.perform(post("/feedback").param("pageType", "general").param("comments", COMMENT_MARKER))
+                .andExpect(redirectedUrl("/feedback/thanks"));
+        assertThat(feedbackRows()).isEqualTo(before + 1);
+        // The plain form shows no note.
+        assertThat(page("/feedback", 200)).doesNotContain("feedback-error")
+                .contains("aria-describedby=\"feedback-message-note\"");
+    }
+
+    @Test
     void feedbackPost_countsABrowserLineBreakAsOneCharacter() throws Exception {
         // 500 characters as the textarea counts them, sent with CRLF line breaks (510 on the wire).
         String typed = (COMMENT_MARKER + "\n" + "y".repeat(60) + "\n").repeat(5);
