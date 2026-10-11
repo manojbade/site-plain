@@ -4,3 +4,4 @@ target/
 *.iml
 _docs/
 scripts/npl_site_boundaries.geojson
+.claude/
