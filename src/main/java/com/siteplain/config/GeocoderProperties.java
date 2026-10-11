@@ -8,9 +8,22 @@ public class GeocoderProperties {
 
     private String censusBaseUrl = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress";
     private String nominatimBaseUrl = "https://nominatim.openstreetmap.org/search";
-    private String userAgent = "site-plain/0.0.1";
+    /** Sent to both geocoders. Nominatim's usage policy asks for an identifying User-Agent with a way to reach the operator. */
+    public static final String DEFAULT_USER_AGENT = "site-plain/0.0.1 (+https://site-plain.com/feedback)";
+
+    private String userAgent = DEFAULT_USER_AGENT;
     private Duration censusTimeout = Duration.ofSeconds(3);
-    private Duration nominatimTimeout = Duration.ofSeconds(20);
+    /**
+     * 5 s, down from 20 s. Nominatim answers a single-address search in well under a second, so 5 s
+     * is several times its normal latency. The longer timeout only made a slow Nominatim hold scarce
+     * capacity: each lookup keeps one of the 6 geocoding slots (WorkLimits) through its Census call
+     * (up to 3 s), its wait for the one-per-second Nominatim slot (up to 3 s) and the Nominatim call.
+     * At 20 s that was up to 26 s a slot, so six slow calls shut out every other uncached lookup (a
+     * 503 after 1 s) for nearly half a minute; at 5 s it is at most 11 s, and the visitor waits at most
+     * that long for an answer instead of 26 s. A Nominatim timeout reads as no answer: the lookup shows
+     * the could-not-resolve page and the address is not cached, so a retry tries again.
+     */
+    private Duration nominatimTimeout = Duration.ofSeconds(5);
     private String censusBenchmark = "Public_AR_Current";
     private int nominatimLimit = 1;
     /** Geocode cache: most addresses kept, how long a match is reused, how long a definite "no match" is. */

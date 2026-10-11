@@ -43,6 +43,7 @@ class GeocodingServiceCacheTest {
     private volatile String censusBody = CENSUS_MATCH;
     private volatile int nominatimStatus = 200;
     private volatile String nominatimBody = "[]";
+    private volatile String nominatimUserAgent;
     private final MutableClock clock = new MutableClock();
     private final GeocoderProperties properties = new GeocoderProperties();
 
@@ -55,6 +56,7 @@ class GeocodingServiceCacheTest {
         });
         server.createContext("/nominatim", exchange -> {
             nominatimCalls.incrementAndGet();
+            nominatimUserAgent = exchange.getRequestHeaders().getFirst("User-Agent");
             reply(exchange, nominatimStatus, nominatimBody);
         });
         server.start();
@@ -66,6 +68,14 @@ class GeocodingServiceCacheTest {
     @AfterEach
     void stopServer() {
         server.stop(0);
+    }
+
+    @Test
+    void nominatimRequests_carryTheUserAgentWithAContact() {
+        censusBody = CENSUS_NO_MATCH;
+        nominatimBody = NOMINATIM_MATCH;
+        assertThat(service().geocode("57 Salem St, Woburn, MA").geocoderUsed()).isEqualTo("nominatim");
+        assertThat(nominatimUserAgent).isEqualTo("site-plain/0.0.1 (+https://site-plain.com/feedback)");
     }
 
     @Test

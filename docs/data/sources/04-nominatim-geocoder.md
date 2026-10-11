@@ -11,7 +11,7 @@ Fallback geocoder used only when the Census geocoder (see [source 03](03-census-
 
 ## Terms of use
 
-Nominatim's usage policy requires a valid identifying `User-Agent`. The app sends `siteplain.geocoder.userAgent`, wired to `SITEPLAIN_GEOCODER_USER_AGENT` (default `site-plain/0.0.1`). The other geocoder properties (base URLs, timeouts, limit) have code defaults but are not bound to env vars. If Nominatim ever returns 403s, check that header first. The public endpoint also asks for no more than ~1 request/second sustained; this app only hits it on Census misses, so volume is low.
+Nominatim's usage policy requires a valid identifying `User-Agent`. The app sends `siteplain.geocoder.userAgent`, wired to `SITEPLAIN_GEOCODER_USER_AGENT` (default `site-plain/0.0.1 (+https://site-plain.com/feedback)`, the contact the policy asks for). The other geocoder properties (base URLs, timeouts, limit) have code defaults but are not bound to env vars. The Nominatim timeout is 5 s (see `GeocoderProperties.nominatimTimeout` for why). If Nominatim ever returns 403s, check that header first. The public endpoint also asks for no more than ~1 request/second sustained; this app only hits it on Census misses, so volume is low.
 
 ## Refresh
 
