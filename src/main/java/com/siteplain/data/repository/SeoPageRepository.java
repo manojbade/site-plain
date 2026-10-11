@@ -141,7 +141,7 @@ public class SeoPageRepository {
         String containsPattern = "%" + query + "%";
         String prefixPattern = query + "%";
         return jdbcTemplate.query("""
-                SELECT epa_id, site_name, state_code, exposure_status_label
+                SELECT epa_id, site_name, state_code, exposure_status_label, exposure_status_code
                 FROM site_seo_page_cache
                 WHERE upper(epa_id) LIKE upper(?)
                    OR lower(site_name) LIKE lower(?)
@@ -160,13 +160,14 @@ public class SeoPageRepository {
                 rs.getString("epa_id"),
                 rs.getString("site_name"),
                 rs.getString("state_code"),
-                rs.getString("exposure_status_label")
+                rs.getString("exposure_status_label"),
+                rs.getString("exposure_status_code")
         ), containsPattern, containsPattern, query, query, prefixPattern, prefixPattern, query, limit);
     }
 
     public List<SiteSearchSuggestion> findExactSiteNameMatches(String siteName, int limit) {
         return jdbcTemplate.query("""
-                SELECT epa_id, site_name, state_code, exposure_status_label
+                SELECT epa_id, site_name, state_code, exposure_status_label, exposure_status_code
                 FROM site_seo_page_cache
                 WHERE lower(site_name) = lower(?)
                 ORDER BY epa_id ASC
@@ -175,7 +176,8 @@ public class SeoPageRepository {
                 rs.getString("epa_id"),
                 rs.getString("site_name"),
                 rs.getString("state_code"),
-                rs.getString("exposure_status_label")
+                rs.getString("exposure_status_label"),
+                rs.getString("exposure_status_code")
         ), siteName, limit);
     }
 }

@@ -9,46 +9,107 @@
   <th:block th:replace="~{fragments/head :: assets}"></th:block>
 </head>
 <body class="bg-page">
-<div th:replace="fragments/header :: header"></div>
-<main class="container py-4">
-  <article class="card shadow-sm p-4">
-    <p class="eyebrow mb-2">EPA Superfund Site</p>
-    <h1 class="display-6 mb-2" th:text="${viewModel.pageData.siteName}">Site Name</h1>
-    <p class="text-muted mb-3">
-      <span th:text="${viewModel.pageData.stateCode}">GA</span>
-      <span class="mx-2">|</span>
-      EPA ID <span th:text="${viewModel.pageData.epaId}">GA8213820731</span>
+<div th:replace="~{fragments/header :: header}"></div>
+<main class="container py-3 py-lg-4" th:with="site=${viewModel.pageData}">
+  <section class="tt-report-header mb-4">
+    <p class="eyebrow mb-2">EPA Superfund site</p>
+    <h1 class="tt-page-title mb-3" th:text="${site.siteName}">Site Name</h1>
+    <p class="tt-page-subtitle mb-2">
+      <span th:replace="~{fragments/exposure-badge :: badge(${site.exposureStatusCode}, ${site.exposureStatusLabel})}"></span>
     </p>
-    <div class="mb-3">
-      <span th:replace="fragments/exposure-badge :: badge(${viewModel.pageData.exposureStatusCode}, ${viewModel.pageData.exposureStatusLabel})"></span>
-      <p class="text-muted small mt-2 mb-0" th:if="${viewModel.exposureStatusAsOf != null}"
-         th:text="'EPA exposure status as of ' + ${viewModel.exposureStatusAsOf}">EPA exposure status as of October 10, 2026</p>
+    <div class="tt-report-meta">
+      <ul class="tt-meta-list">
+        <li th:if="${site.stateCode != null}" th:text="${site.stateCode}">GA</li>
+        <li>EPA ID <span th:text="${site.epaId}">GA8213820731</span></li>
+        <li th:if="${viewModel.exposureStatusAsOf != null}"
+            th:text="'EPA exposure status as of ' + ${viewModel.exposureStatusAsOf}">EPA exposure status as of October 10, 2026</li>
+      </ul>
     </div>
-    <p th:if="${viewModel.pageData.exposurePathwayDescription != null and !#strings.isEmpty(viewModel.pageData.exposurePathwayDescription)}">
-      About this site’s exposure pathways:
-      <span th:utext="${viewModel.pageData.exposurePathwayDescription}">EPA text</span>
-    </p>
-    <div class="alert alert-warning mt-3 mb-0" role="note" th:if="${!viewModel.pageData.hasBoundary}">
+
+    <div class="sp-notice mt-3" role="note" th:if="${!site.hasBoundary}">
+      <span class="sp-notice-title">No published boundary</span>
       EPA has not published a boundary for this site, so Site Plain cannot calculate how far an address is from it, and it does not appear in address lookup results. Use the EPA site profile below for its location.
     </div>
-    <form method="post" th:action="@{/lookup}" th:object="${lookupForm}" class="row g-3 mt-3" th:if="${viewModel.pageData.hasBoundary}">
-      <div class="col-12">
-        <label class="form-label fw-semibold">Enter your address to see how close you are to this site</label>
-      </div>
-      <div class="col-12 col-md-9">
-        <input type="text" th:field="*{address}" class="form-control" placeholder="Enter a home address">
-      </div>
-      <div class="col-12 col-md-3">
-        <button type="submit" class="btn btn-dark w-100">Check distance</button>
-      </div>
-    </form>
-    <div class="mt-3">
-      <a class="btn btn-outline-dark btn-sm" th:href="${viewModel.pageData.effectiveEpaUrl()}" target="_blank" rel="noopener">View EPA site profile</a>
+
+    <div class="mt-3" th:insert="~{fragments/disclaimer :: disclaimer}"></div>
+  </section>
+
+  <div class="row g-4 g-xl-5">
+    <div class="col-xl-8">
+      <section class="tt-report-section" th:if="${site.exposurePathwayDescription != null and !#strings.isEmpty(site.exposurePathwayDescription)}">
+        <div class="tt-report-section-header">
+          <h2 class="tt-report-section-title">About this site's exposure pathways</h2>
+        </div>
+        <p class="sp-epa-text mb-0" th:utext="${site.exposurePathwayDescription}">EPA text</p>
+      </section>
+
+      <section class="tt-report-section tt-lookup-band" th:if="${site.hasBoundary}">
+        <div class="tt-report-section-header">
+          <h2 class="tt-report-section-title">How close is an address?</h2>
+        </div>
+        <div class="tt-primary-lookup-pane">
+          <form method="post" th:action="@{/lookup}" th:object="${lookupForm}" class="row g-3">
+            <div class="col-12">
+              <label class="form-label mb-2 tt-primary-input-label" for="site-lookup-address">Enter your address to see how close you are to this site</label>
+              <input type="text"
+                     id="site-lookup-address"
+                     th:field="*{address}"
+                     class="form-control form-control-lg tt-input tt-primary-input"
+                     placeholder="Enter a home address"
+                     autocomplete="street-address">
+            </div>
+            <div class="col-12 text-md-end">
+              <button type="submit" class="btn tt-btn-primary btn-lg tt-home-submit">Check distance</button>
+            </div>
+          </form>
+        </div>
+      </section>
     </div>
-  </article>
-  <div th:replace="fragments/disclaimer :: disclaimer"></div>
-  <div th:replace="fragments/feedback-form :: feedback-form('site', ${viewModel.pageData.epaId})"></div>
+
+    <div class="col-xl-4 align-self-start">
+      <div class="tt-side-stack">
+        <aside class="tt-side-card">
+          <h2 class="tt-card-kicker">Site facts</h2>
+          <div class="tt-system-facts">
+            <div class="tt-fact-row">
+              <span class="tt-fact-label">EPA ID</span>
+              <span class="tt-fact-value" th:text="${site.epaId}">GA8213820731</span>
+            </div>
+            <div class="tt-fact-row">
+              <span class="tt-fact-label">State</span>
+              <span class="tt-fact-value" th:text="${viewModel.stateName() != null ? viewModel.stateName() : (site.stateCode != null ? site.stateCode : 'Not reported')}">Georgia</span>
+            </div>
+            <div class="tt-fact-row">
+              <span class="tt-fact-label">EPA exposure status code</span>
+              <span class="tt-fact-value" th:text="${site.exposureStatusCode != null and !#strings.isEmpty(site.exposureStatusCode) ? site.exposureStatusCode : 'Not reported'}">HEUC</span>
+            </div>
+            <div class="tt-fact-row">
+              <span class="tt-fact-label">Boundary published by EPA</span>
+              <span class="tt-fact-value" th:text="${site.hasBoundary} ? 'Yes' : 'No'">Yes</span>
+            </div>
+          </div>
+        </aside>
+
+        <aside class="tt-side-card">
+          <h2 class="tt-card-kicker">Verify with EPA</h2>
+          <ul class="tt-source-list sp-side-links">
+            <li><a class="tt-card-link" th:href="${site.effectiveEpaUrl()}" target="_blank" rel="noopener">View EPA site profile</a></li>
+            <li th:if="${viewModel.stateName() != null}">
+              <a th:href="@{/state/{code}(code=${site.stateCode})}" th:text="'All active sites in ' + ${viewModel.stateName()}">All active sites in Georgia</a>
+            </li>
+          </ul>
+        </aside>
+      </div>
+    </div>
+  </div>
+
+  <!--/* After both columns, so on phones the site facts come before the form. */-->
+  <div class="row">
+    <div class="col-xl-8">
+      <div th:replace="~{fragments/feedback-form :: feedback-form('site', ${site.epaId})}"></div>
+    </div>
+  </div>
 </main>
-<div th:replace="fragments/footer :: footer"></div>
+<div th:replace="~{fragments/footer :: footer}"></div>
 </body>
 </html>

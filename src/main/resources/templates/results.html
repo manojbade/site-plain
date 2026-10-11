@@ -8,219 +8,175 @@
   <link th:if="${viewModel.siteBoundaryGeojson != null}" href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet">
 </head>
 <body class="bg-page">
-<div th:replace="fragments/header :: header"></div>
-<main class="container py-4">
-  <div th:if="${viewModel.unresolved}">
-    <div th:replace="~{error/unresolved :: unresolved(${viewModel.inputAddress}, ${viewModel.normalizedAddress})}"></div>
+<div th:replace="~{fragments/header :: header}"></div>
+<div class="tt-print-header d-none" aria-hidden="true">
+  <div class="tt-print-brand">Site Plain</div>
+  <div class="tt-print-url">site-plain.com</div>
+</div>
+<main class="container py-3 py-lg-4">
+  <div class="row justify-content-center" th:if="${viewModel.unresolved}">
+    <div class="col-lg-7">
+      <div th:replace="~{error/unresolved :: unresolved(${viewModel.inputAddress}, ${viewModel.normalizedAddress})}"></div>
+    </div>
   </div>
-  <div th:if="${!viewModel.unresolved}">
-    <header class="mb-4">
-      <div class="d-flex align-items-start justify-content-between flex-wrap gap-2 mb-4">
-        <div>
-          <p class="eyebrow mb-1">Lookup results</p>
-          <h1 class="h2 mb-1" th:text="${viewModel.normalizedAddress}">Resolved address</h1>
-          <p class="text-muted mb-0" th:text="${viewModel.resultCount} + ' active Superfund site(s) found within 3 miles'">0 active sites found</p>
-          <p class="text-muted small mb-0" th:if="${viewModel.exposureStatusAsOf != null}"
-             th:text="'EPA exposure status as of ' + ${viewModel.exposureStatusAsOf}">EPA exposure status as of October 10, 2026</p>
+  <th:block th:if="${!viewModel.unresolved}">
+    <section class="tt-report-header mb-4">
+      <div class="row g-3 align-items-start">
+        <div class="col-lg-8">
+          <p class="eyebrow mb-2">Lookup results</p>
+          <h1 class="tt-page-title mb-3" th:text="${viewModel.normalizedAddress}">Woburn, MA</h1>
+          <p class="tt-page-subtitle mb-2" th:text="${viewModel.resultCountSentence()}">3 active Superfund sites found within 3 miles</p>
+          <div class="tt-report-meta">
+            <ul class="tt-meta-list">
+              <li th:if="${viewModel.stateCode != null}" th:text="${viewModel.stateCode}">MA</li>
+              <li>Distance to the EPA site boundary</li>
+              <li th:if="${viewModel.exposureStatusAsOf != null}"
+                  th:text="'EPA exposure status as of ' + ${viewModel.exposureStatusAsOf}">EPA exposure status as of October 10, 2026</li>
+            </ul>
+          </div>
         </div>
-        <div class="d-flex flex-wrap gap-2 align-items-center">
-          <a href="/" class="site-nav-button">&#8592; Check another address</a>
-          <a class="site-nav-button"
-             th:href="@{/results/pdf(lat=${viewModel.lat}, lng=${viewModel.lng}, address=${viewModel.normalizedAddress}, raw=${viewModel.inputAddress}, state=${viewModel.stateCode}, approx=${viewModel.approximateMatch})}">
-            Download results
-          </a>
-          <input id="share-url" type="text" class="visually-hidden" value="" readonly>
-          <button class="site-nav-button" type="button" id="share-btn">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="margin-right:0.35rem;vertical-align:-1px">
-              <path d="M18 8a3 3 0 1 0-2.82-4H15a3 3 0 0 0 .18 1.03L8.91 8.17a3 3 0 0 0-1.91-.67 3 3 0 1 0 1.91 5.33l6.27 3.14A3 3 0 0 0 15 17a3 3 0 1 0 .18 1.03l-6.27-3.14A3 3 0 0 0 9 12c0-.36-.06-.7-.18-1.03l6.27-3.14c.53.47 1.23.77 2.01.77Z"/>
-            </svg>
-            Share results
-          </button>
-          <span id="share-status" class="text-muted small" aria-live="polite"></span>
+        <div class="col-lg-4">
+          <div class="tt-report-share">
+            <input id="share-url" class="visually-hidden" type="text" value="" readonly tabindex="-1" aria-hidden="true">
+            <div class="tt-report-actions">
+              <button class="btn tt-btn-secondary tt-report-share-button"
+                      type="button"
+                      id="share-btn"
+                      data-copy-target="share-url"
+                      data-status-target="share-status">
+                <span class="tt-share-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false">
+                    <path d="M18 8a3 3 0 1 0-2.82-4H15a3 3 0 0 0 .18 1.03L8.91 8.17a3 3 0 0 0-1.91-.67 3 3 0 1 0 1.91 5.33l6.27 3.14A3 3 0 0 0 15 17a3 3 0 1 0 .18 1.03l-6.27-3.14A3 3 0 0 0 9 12c0-.36-.06-.7-.18-1.03l6.27-3.14c.53.47 1.23.77 2.01.77Z"/>
+                  </svg>
+                </span>
+                <span>Share results</span>
+              </button>
+              <a class="btn tt-btn-secondary tt-report-share-button"
+                 th:href="@{/results/pdf(lat=${viewModel.lat}, lng=${viewModel.lng}, address=${viewModel.normalizedAddress}, raw=${viewModel.inputAddress}, state=${viewModel.stateCode}, approx=${viewModel.approximateMatch})}">
+                Download results
+              </a>
+            </div>
+            <p class="tt-report-share-status mb-0" id="share-status" aria-live="polite"></p>
+            <a href="/" class="tt-btn-check-another">Check another address</a>
+          </div>
         </div>
       </div>
-    </header>
 
-    <div class="alert alert-warning mb-4" role="note" th:if="${viewModel.approximateMatch != null}">
-      <strong>Approximate location.</strong>
-      This address could not be matched to a house or building, only to the following
-      <span th:text="${viewModel.approximateMatch}">city</span>:
-      <span th:text="${viewModel.normalizedAddress}">Woburn, Massachusetts</span>.
-      Distances are measured from one point in that area, so they may be off, and sites near the actual address may be missing or listed in error.
-    </div>
+      <!--/* The caveat sits above the numbers so nobody reads them first. */-->
+      <div class="sp-notice mt-3" role="note" th:if="${viewModel.approximateMatch != null}">
+        <span class="sp-notice-title">Approximate location</span>
+        This address could not be matched to a house or building, only to the following
+        <span th:text="${viewModel.approximateMatch}">city</span>:
+        <span th:text="${viewModel.normalizedAddress}">Woburn, Massachusetts</span>.
+        Distances are measured from one point in that area, so they may be off, and sites near the actual address may be missing or listed in error.
+      </div>
 
-    <div class="row g-3">
+      <dl class="tt-kpi-strip" th:if="${viewModel.hasSites}"
+          th:with="red=${viewModel.statusCount('red')}">
+        <div class="tt-kpi-item"><dt>Active sites within 3 miles</dt><dd th:text="${viewModel.resultCount}">3</dd></div>
+        <div class="tt-kpi-item"><dt>Nearest site boundary</dt><dd th:text="${viewModel.nearestDistanceShort()}">0.8 mi</dd></div>
+        <div class="tt-kpi-item"><dt>Exposure not under control</dt><dd th:classappend="${red > 0} ? 'tt-alert-text'" th:text="${red}">0</dd></div>
+        <div class="tt-kpi-item"><dt>Insufficient data or not reported</dt><dd th:text="${viewModel.statusCount('gray')}">0</dd></div>
+      </dl>
 
-      <!-- Left: site cards or no-sites message -->
-      <div th:class="${viewModel.siteBoundaryGeojson != null ? 'col-md-6' : 'col-12'}">
-        <div class="mb-3" th:if="${viewModel.hasSites}" th:insert="~{fragments/status-legend :: legend}"></div>
-        <div class="vstack gap-3" th:if="${viewModel.hasSites}">
-          <article class="card shadow-sm" th:each="site : ${viewModel.sites}">
-            <div class="card-body">
-              <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
-                <div>
-                  <h2 class="h4 mb-2"><a th:href="@{/site/{epaId}(epaId=${site.epaId})}" th:text="${site.siteName}">Site name</a></h2>
-                  <p class="mb-2"><strong>Distance:</strong>
-                    <span th:text="${T(com.siteplain.support.DistanceFormatter).format(site.distanceMeters)}">0.4 miles</span>
-                  </p>
-                  <div class="mb-2">
-                    <span th:replace="fragments/exposure-badge :: badge(${site.exposureStatusCode}, ${site.exposureStatusLabel})"></span>
-                  </div>
-                  <p class="mb-0 text-muted" th:if="${site.exposurePathwayDescription != null and !#strings.isEmpty(site.exposurePathwayDescription)}">
-                    About this site's exposure pathways:
-                    <span th:utext="${site.exposurePathwayDescription}">EPA text</span>
-                  </p>
-                </div>
-                <a class="btn btn-outline-dark btn-sm" th:href="${site.effectiveEpaUrl()}" target="_blank" rel="noopener">View EPA site profile</a>
+      <div class="mt-3" th:insert="~{fragments/disclaimer :: disclaimer}"></div>
+    </section>
+
+    <div class="row g-4 g-xl-5">
+      <div class="col-xl-8">
+        <section class="tt-report-section" th:if="${viewModel.hasSites}">
+          <div class="tt-report-section-header">
+            <h2 class="tt-report-section-title">Sites by distance</h2>
+            <span class="tt-report-section-count" th:text="${viewModel.resultCount + (viewModel.resultCount == 1 ? ' site' : ' sites') + ' within 3 miles'}">3 sites within 3 miles</span>
+          </div>
+          <div class="mb-3" th:insert="~{fragments/status-legend :: legend}"></div>
+          <div class="sp-site-list">
+            <article class="sp-site-item" th:each="site : ${viewModel.sites}">
+              <div class="sp-site-item-head">
+                <h3 class="sp-site-name"><a th:href="@{/site/{epaId}(epaId=${site.epaId})}" th:text="${site.siteName}">WELLS G&amp;H</a></h3>
+                <span class="sp-site-distance"
+                      th:classappend="${site.distanceMeters <= 0} ? 'is-inside'"
+                      th:text="${T(com.siteplain.support.DistanceFormatter).format(site.distanceMeters)}">0.8 miles</span>
               </div>
-            </div>
-          </article>
-        </div>
-
-        <section class="card shadow-sm p-4" th:if="${!viewModel.hasSites}">
-          <h2 class="h4">No active EPA Superfund sites found within 3 miles of this address.</h2>
-          <p class="mb-0">The EPA National Priorities List includes <span th:text="${#numbers.formatInteger(viewModel.activeSiteCount, 1, 'COMMA')}">1,337</span> active sites nationally. Absence from this list does not mean an area is free from contamination.</p>
+              <p class="mb-2"><span th:replace="~{fragments/exposure-badge :: badge(${site.exposureStatusCode}, ${site.exposureStatusLabel})}"></span></p>
+              <p class="tt-muted-copy mb-2" th:if="${site.exposurePathwayDescription != null and !#strings.isEmpty(site.exposurePathwayDescription)}">
+                About this site's exposure pathways:
+                <span th:utext="${site.exposurePathwayDescription}">EPA text</span>
+              </p>
+              <p class="sp-site-links mb-0">
+                <a th:href="${site.effectiveEpaUrl()}" target="_blank" rel="noopener">View EPA site profile</a>
+              </p>
+            </article>
+          </div>
         </section>
 
-        <section class="card shadow-sm p-4 mt-3" th:if="${!viewModel.stateSitesWithoutBoundary.isEmpty()}">
-          <h2 class="h5">Active sites in this state with no published boundary</h2>
-          <p class="mb-2">EPA has not published a boundary for these active sites, so their distance from this address cannot be calculated and they are not included above:</p>
-          <ul class="mb-0">
+        <section class="tt-report-section" th:if="${!viewModel.hasSites}">
+          <div class="tt-report-section-header">
+            <h2 class="tt-report-section-title">Sites by distance</h2>
+            <span class="tt-report-section-count">0 sites within 3 miles</span>
+          </div>
+          <p class="tt-empty-note mb-2">No active EPA Superfund sites found within 3 miles of this address.</p>
+          <p class="tt-section-note mb-0">The EPA National Priorities List includes <span th:text="${#numbers.formatInteger(viewModel.activeSiteCount, 1, 'COMMA')}">1,337</span> active sites nationally. Absence from this list does not mean an area is free from contamination.</p>
+        </section>
+
+        <section class="tt-report-section" th:if="${!viewModel.stateSitesWithoutBoundary.isEmpty()}">
+          <div class="tt-report-section-header">
+            <h2 class="tt-report-section-title">Active sites in this state with no published boundary</h2>
+            <span class="tt-report-section-count"
+                  th:with="n=${#lists.size(viewModel.stateSitesWithoutBoundary)}"
+                  th:text="${n + (n == 1 ? ' site' : ' sites')}">2 sites</span>
+          </div>
+          <p class="tt-section-note">EPA has not published a boundary for these active sites, so their distance from this address cannot be calculated and they are not included above:</p>
+          <ul class="sp-link-list">
             <li th:each="site : ${viewModel.stateSitesWithoutBoundary}">
               <a th:href="@{/site/{epaId}(epaId=${site.epaId})}" th:text="${site.siteName}">Site name</a>
             </li>
           </ul>
         </section>
-        <p class="text-muted small mt-3 mb-0"
+        <p class="tt-section-note"
            th:if="${viewModel.stateSitesWithoutBoundary.isEmpty() and viewModel.stateCode == null and viewModel.sitesWithoutBoundaryCount > 0}"
            th:text="'EPA has not published a boundary for ' + ${viewModel.sitesWithoutBoundaryCount} + ' active sites nationwide, so they are not included in distance results. Search by site name to find them.'">
           EPA has not published a boundary for some active sites.
         </p>
-
-        <section class="card shadow-sm official-resources-card mt-3">
-          <div class="card-body">
-            <h2 class="h4 mb-3">Official Resources</h2>
-            <div class="vstack">
-              <a class="official-resource-link"
-                 th:each="resource : ${viewModel.officialResources}"
-                 th:href="${resource.url}"
-                 target="_blank"
-                 rel="noopener">
-                <span th:text="${resource.label}">EPA Superfund Site Search</span>
-                <span class="official-resource-icon" aria-hidden="true">&#8599;</span>
-              </a>
-            </div>
-          </div>
-        </section>
       </div>
 
-      <!-- Right: map -->
-      <div th:if="${viewModel.siteBoundaryGeojson != null}"
-           class="col-md-6 align-self-start"
-           style="position:sticky;top:1rem;">
-        <div id="results-map"
-             class="card shadow-sm"
-             style="height:380px;overflow:hidden;border-radius:0.5rem;"></div>
-      </div>
+      <!--/* Side column: below the site list under 1200px, so phones read the list before the map. */-->
+      <div class="col-xl-4 align-self-start">
+        <div class="tt-side-stack">
+          <aside class="tt-side-card sp-map-card p-0 overflow-hidden" th:if="${viewModel.siteBoundaryGeojson != null}">
+            <div id="results-map"
+                 class="sp-results-map"
+                 role="img"
+                 aria-label="Map of the address and nearby Superfund site boundaries, colored by EPA exposure status"
+                 th:attr="data-mapbox-token=${viewModel.mapboxPublicToken},data-lat=${viewModel.lat},data-lng=${viewModel.lng},data-geojson=${viewModel.siteBoundaryGeojson}"></div>
+            <p class="tt-mini-note sp-map-caption mb-0">Boundaries are colored by EPA human exposure status, as in the key above the site list. The dark pin marks the address.</p>
+          </aside>
 
+          <aside class="tt-side-card">
+            <h2 class="tt-card-kicker">Official sources</h2>
+            <ul class="tt-source-list sp-side-links">
+              <li th:each="resource : ${viewModel.officialResources}">
+                <a th:href="${resource.url}" target="_blank" rel="noopener" th:text="${resource.label}">EPA Superfund Site Search</a>
+              </li>
+            </ul>
+          </aside>
+        </div>
+      </div>
     </div>
 
-    <div th:replace="fragments/disclaimer :: disclaimer"></div>
-    <div th:replace="fragments/feedback-form :: feedback-form('results', null)"></div>
-  </div>
+    <!--/* After both columns, so on phones the map and sources come before the form. */-->
+    <div class="row">
+      <div class="col-xl-8">
+        <div th:replace="~{fragments/feedback-form :: feedback-form('results', null)}"></div>
+      </div>
+    </div>
+  </th:block>
 </main>
-<div th:replace="fragments/footer :: footer"></div>
+<div th:replace="~{fragments/footer :: footer}"></div>
+<div class="tt-print-footer d-none" aria-hidden="true">
+  Site Plain | site-plain.com | Generated <span th:text="${#temporals.format(#temporals.createToday(), 'MMMM d, yyyy')}">October 10, 2026</span>
+</div>
 <script th:if="${viewModel.siteBoundaryGeojson != null}" src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
-<script th:if="${viewModel.siteBoundaryGeojson != null}" th:inline="javascript">
-/*<![CDATA[*/
-(function () {
-  var token = /*[[${viewModel.mapboxPublicToken}]]*/ null;
-  var lat = /*[[${viewModel.lat}]]*/ null;
-  var lng = /*[[${viewModel.lng}]]*/ null;
-  var geojsonStr = /*[[${viewModel.siteBoundaryGeojson}]]*/ null;
-  var mapEl = document.getElementById('results-map');
-  if (!token || !lat || !lng || !geojsonStr || !mapEl) return;
-
-  mapboxgl.accessToken = token;
-  var map = new mapboxgl.Map({
-    container: 'results-map',
-    style: 'mapbox://styles/mapbox/light-v11',
-    center: [lng, lat],
-    zoom: 11
-  });
-
-  map.on('load', function () {
-    var geojson = JSON.parse(geojsonStr);
-    map.addSource('sites', { type: 'geojson', data: geojson });
-    map.addLayer({
-      id: 'sites-fill',
-      type: 'fill',
-      source: 'sites',
-      paint: {
-        'fill-color': ['match', ['get', 'color'],
-          'red', '#b73b2d',
-          'yellow', '#b8860b',
-          'green', '#2d7a46',
-          '#6c757d'
-        ],
-        'fill-opacity': 0.25
-      }
-    });
-    map.addLayer({
-      id: 'sites-outline',
-      type: 'line',
-      source: 'sites',
-      paint: {
-        'line-color': ['match', ['get', 'color'],
-          'red', '#b73b2d',
-          'yellow', '#b8860b',
-          'green', '#2d7a46',
-          '#6c757d'
-        ],
-        'line-width': 1.5
-      }
-    });
-    new mapboxgl.Marker({ color: '#1f2520' })
-      .setLngLat([lng, lat])
-      .addTo(map);
-
-    // Fit bounds to include all site polygons + the user pin
-    var allCoords = [];
-    geojson.features.forEach(function (f) {
-      var geom = f.geometry;
-      if (!geom) return;
-      var rings = geom.type === 'Polygon' ? geom.coordinates
-                : geom.type === 'MultiPolygon' ? geom.coordinates.flatMap(function (p) { return p; })
-                : [];
-      rings.forEach(function (ring) { allCoords = allCoords.concat(ring); });
-    });
-    allCoords.push([lng, lat]);
-    if (allCoords.length > 1) {
-      var bounds = allCoords.reduce(function (b, c) { return b.extend(c); },
-        new mapboxgl.LngLatBounds(allCoords[0], allCoords[0]));
-      map.fitBounds(bounds, { padding: 40, maxZoom: 13, animate: false });
-    }
-  });
-})();
-/*]]>*/
-</script>
-<script>
-  (() => {
-    const btn = document.getElementById('share-btn');
-    const input = document.getElementById('share-url');
-    const status = document.getElementById('share-status');
-    if (!btn || !input) return;
-    input.value = window.location.href;
-    btn.addEventListener('click', async () => {
-      try {
-        await navigator.clipboard.writeText(input.value);
-        status.textContent = 'Link copied!';
-        setTimeout(() => { status.textContent = ''; }, 2500);
-      } catch {
-        status.textContent = 'Copy failed - copy from the address bar';
-      }
-    });
-  })();
-</script>
+<script th:src="@{/js/results.js}"></script>
 </body>
 </html>

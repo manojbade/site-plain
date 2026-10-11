@@ -22,4 +22,13 @@ public record SitePageViewModel(
         }
         return description.toString();
     }
+
+    /** Full state name for the state link, or null when the site has no known state. */
+    public String stateName() {
+        String code = pageData.stateCode();
+        if (code == null || code.isBlank() || !StateNames.isKnown(code)) {
+            return null;
+        }
+        return StateNames.nameFor(code);
+    }
 }

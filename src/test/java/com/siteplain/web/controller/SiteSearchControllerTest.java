@@ -46,7 +46,9 @@ class SiteSearchControllerTest {
                 .andExpect(content().contentType("application/json"))
                 .andExpect(jsonPath("$", hasSize(1)))
                 .andExpect(jsonPath("$[0].epaId").value("NCD980557805"))
-                .andExpect(jsonPath("$[0].siteName").value("Durham Meadows"));
+                .andExpect(jsonPath("$[0].siteName").value("Durham Meadows"))
+                // The status code only feeds the search page's status square; the JSON keeps its four fields.
+                .andExpect(jsonPath("$[0].exposureStatusCode").doesNotExist());
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.siteplain.domain.view;
 
 import com.siteplain.domain.model.NplSite;
+import com.siteplain.support.DistanceFormatter;
 import com.siteplain.support.StateResourceRegistry;
 import java.util.ArrayList;
 import java.util.List;
@@ -38,5 +39,29 @@ public record ResultsViewModel(
         resources.add(new OfficialResourceLink("EPA SEMS facility page", EPA_SEMS_FACILITY_PAGE_URL));
         resources.add(new OfficialResourceLink("ATSDR site info", ATSDR_SITE_INFO_URL));
         return List.copyOf(resources);
+    }
+
+    /** "3 active Superfund sites found within 3 miles", with "site" singular for one. */
+    public String resultCountSentence() {
+        return resultCount + " active Superfund " + (resultCount == 1 ? "site" : "sites") + " found within 3 miles";
+    }
+
+    /** Distance to the nearest site boundary in the short summary-row form, or null with no sites. */
+    public String nearestDistanceShort() {
+        if (sites == null || sites.isEmpty()) {
+            return null;
+        }
+        double nearest = sites.stream().mapToDouble(NplSite::getDistanceMeters).min().orElse(0);
+        return DistanceFormatter.shortFormat(nearest);
+    }
+
+    /** Sites whose EPA human exposure status color is the given one (red, yellow, green or gray). */
+    public long statusCount(String color) {
+        if (sites == null) {
+            return 0;
+        }
+        return sites.stream()
+                .filter(site -> color.equals(site.getExposureStatusColor() == null ? "gray" : site.getExposureStatusColor()))
+                .count();
     }
 }

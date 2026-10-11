@@ -23,4 +23,22 @@ public final class DistanceFormatter {
         }
         return String.format("%.1f miles", miles);
     }
+
+    /**
+     * Short form for the results summary row, where the full sentence does not fit.
+     * "Inside", "Under 10 ft", "420 ft" (under a tenth of a mile), otherwise "0.8 mi".
+     */
+    public static String shortFormat(double meters) {
+        if (meters <= 0) {
+            return "Inside";
+        }
+        double feet = meters * 3.28084;
+        if (feet < 10) {
+            return "Under 10 ft";
+        }
+        if (feet < 528) {
+            return String.format("%.0f ft", feet);
+        }
+        return String.format("%.1f mi", meters / 1609.344);
+    }
 }

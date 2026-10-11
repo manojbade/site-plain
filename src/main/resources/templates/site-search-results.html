@@ -8,56 +8,77 @@
   <th:block th:replace="~{fragments/head :: styles}"></th:block>
 </head>
 <body class="bg-page">
-<div th:replace="fragments/header :: header"></div>
-<main class="container py-4">
-  <section class="card shadow-sm p-4 mb-4">
-    <p class="eyebrow mb-2">Site search</p>
-    <h1 class="h3 mb-2">Search by facility name or EPA ID</h1>
-    <p class="text-muted mb-3">Find a known Superfund site directly when you already have the site name or EPA number.</p>
-    <form method="get" th:action="@{/search/sites}" class="row g-3">
-      <div class="col-12 col-md-9">
-        <input type="text"
-               name="q"
-               class="form-control"
-               th:value="${viewModel.query}"
-               placeholder="Search by facility name or EPA ID">
+<div th:replace="~{fragments/header :: header}"></div>
+<main class="container py-4 py-lg-5">
+  <div class="row justify-content-center">
+    <div class="col-xl-10">
+      <div class="tt-page-intro">
+        <p class="eyebrow mb-2">Site search</p>
+        <h1 class="tt-page-title mb-3">Search by facility name or EPA ID</h1>
+        <p class="tt-page-subtitle mb-0">Find a known Superfund site directly when you already have the site name or EPA number.</p>
       </div>
-      <div class="col-12 col-md-3">
-        <button type="submit" class="btn btn-dark w-100">Search sites</button>
-      </div>
-    </form>
-  </section>
 
-  <section class="card shadow-sm p-4" th:if="${viewModel.hasMatches()}">
-    <h2 class="h4 mb-1">Matching sites</h2>
-    <p class="text-muted mb-3" th:text="'Results for “' + ${viewModel.query} + '”'">Results</p>
-    <div class="vstack gap-3">
-      <article class="site-search-match" th:each="match : ${viewModel.matches}">
-        <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
-          <div>
-            <h3 class="h5 mb-1">
-              <a th:href="@{/site/{epaId}(epaId=${match.epaId})}" th:text="${match.siteName}">Site name</a>
-            </h3>
-            <p class="mb-1 text-muted">
-              <span th:text="${match.stateCode}">GA</span>
-              <span class="mx-2">|</span>
-              EPA ID <span th:text="${match.epaId}">GA1234567890</span>
-            </p>
-            <p class="mb-0 text-muted" th:if="${match.exposureStatusLabel != null and !#strings.isEmpty(match.exposureStatusLabel)}"
-               th:text="${match.exposureStatusLabel}">Exposure status label</p>
-          </div>
-          <a class="btn btn-outline-dark btn-sm" th:href="@{/site/{epaId}(epaId=${match.epaId})}">Open site page</a>
+      <section class="tt-lookup-band mb-5">
+        <div class="tt-primary-lookup-pane">
+          <form method="get" th:action="@{/search/sites}" class="row g-3">
+            <div class="col-12">
+              <label class="form-label mb-2 tt-primary-input-label" for="site-search-q">Site name or EPA ID</label>
+              <input type="text"
+                     id="site-search-q"
+                     name="q"
+                     class="form-control form-control-lg tt-input tt-primary-input"
+                     th:value="${viewModel.query}"
+                     placeholder="Search by facility name or EPA ID"
+                     autocomplete="off">
+            </div>
+            <div class="col-12 text-md-end">
+              <button type="submit" class="btn tt-btn-primary btn-lg tt-home-submit">Search sites</button>
+            </div>
+          </form>
         </div>
-      </article>
-    </div>
-  </section>
+      </section>
 
-  <section class="card shadow-sm p-4" th:if="${!viewModel.hasMatches()}">
-    <h2 class="h4 mb-2">No matching site found</h2>
-    <p class="mb-3">No active Superfund site matched that facility name or EPA ID.</p>
-    <a class="btn btn-outline-dark btn-sm" th:href="@{/}">Try an address lookup instead</a>
-  </section>
+      <section class="tt-report-section" th:if="${viewModel.hasMatches()}">
+        <div class="tt-report-section-header">
+          <h2 class="tt-report-section-title">Matching sites</h2>
+          <span class="tt-report-section-count"
+                th:with="n=${#lists.size(viewModel.matches)}"
+                th:text="${n + (n == 1 ? ' site' : ' sites')}">3 sites</span>
+        </div>
+        <p class="tt-section-note" th:text="'Results for “' + ${viewModel.query} + '”'">Results</p>
+        <div class="tt-directory">
+          <div class="d-grid gap-2">
+            <a class="tt-directory-item" th:each="match : ${viewModel.matches}" th:href="@{/site/{epaId}(epaId=${match.epaId})}">
+              <div class="d-flex flex-column flex-lg-row justify-content-between gap-2">
+                <div>
+                  <div class="fw-semibold sp-directory-name" th:text="${match.siteName}">Site name</div>
+                  <div class="tt-cell-detail">
+                    <span th:text="${match.stateCode}">GA</span>
+                    <span aria-hidden="true">&middot;</span>
+                    EPA ID <span th:text="${match.epaId}">GA1234567890</span>
+                  </div>
+                </div>
+                <div class="text-lg-end" th:if="${match.exposureStatusLabel != null and !#strings.isEmpty(match.exposureStatusLabel)}">
+                  <span th:replace="~{fragments/exposure-badge :: badge(${match.exposureStatusCode}, ${match.exposureStatusLabel})}"></span>
+                </div>
+              </div>
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section class="tt-report-section" th:if="${!viewModel.hasMatches()}">
+        <div class="tt-report-section-header">
+          <h2 class="tt-report-section-title">No matching site found</h2>
+        </div>
+        <div class="tt-directory">
+          <div class="tt-state-card tt-surface tt-muted-copy mb-3">No active Superfund site matched that facility name or EPA ID.</div>
+          <a class="tt-card-link" th:href="@{/}">Try an address lookup instead</a>
+        </div>
+      </section>
+    </div>
+  </div>
 </main>
-<div th:replace="fragments/footer :: footer"></div>
+<div th:replace="~{fragments/footer :: footer}"></div>
 </body>
 </html>

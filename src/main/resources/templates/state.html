@@ -10,47 +10,106 @@
   <th:block th:replace="~{fragments/head :: assets}"></th:block>
 </head>
 <body class="bg-page">
-<div th:replace="fragments/header :: header"></div>
-<main class="container py-4">
-  <section class="card shadow-sm p-4 mb-4">
-    <h1 class="display-6 mb-2" th:text="${viewModel.stateName} + ' EPA Superfund Sites'">State EPA Superfund Sites</h1>
-    <p class="mb-3"><span th:text="${viewModel.siteCount}">0</span> active sites on the EPA National Priorities List</p>
-    <form method="post" th:action="@{/lookup}" th:object="${lookupForm}" class="row g-3">
-      <div class="col-12 col-md-9">
-        <input type="text" th:field="*{address}" class="form-control" placeholder="Enter your address to find sites near you">
+<div th:replace="~{fragments/header :: header}"></div>
+<main class="container py-3 py-lg-4">
+  <section class="tt-report-header mb-4">
+    <div class="row g-4 align-items-start">
+      <div class="col-lg-7">
+        <p class="eyebrow mb-2">EPA Superfund sites by state</p>
+        <h1 class="tt-page-title mb-3" th:text="${viewModel.stateName} + ' EPA Superfund sites'">State EPA Superfund sites</h1>
+        <p class="tt-page-subtitle mb-0"><span th:text="${viewModel.siteCount}">0</span> active sites on the EPA National Priorities List</p>
       </div>
-      <div class="col-12 col-md-3">
-        <button type="submit" class="btn btn-dark w-100">Find nearby sites</button>
-      </div>
-    </form>
-  </section>
-
-  <div class="vstack gap-3">
-    <article class="card shadow-sm" th:each="site : ${viewModel.sitesWithBoundary()}">
-      <div class="card-body d-flex justify-content-between align-items-start gap-3 flex-wrap">
-        <div>
-          <h2 class="h5 mb-2"><a th:href="@{/site/{epaId}(epaId=${site.epaId})}" th:text="${site.siteName}">Site Name</a></h2>
-          <span th:replace="fragments/exposure-badge :: badge(${site.exposureStatusCode}, ${site.exposureStatusLabel})"></span>
+      <div class="col-lg-5 tt-lookup-band">
+        <div class="tt-primary-lookup-pane">
+          <form method="post" th:action="@{/lookup}" th:object="${lookupForm}" class="row g-3">
+            <div class="col-12">
+              <label class="form-label mb-2 tt-primary-input-label" for="state-lookup-address">Enter your address to find sites near you</label>
+              <input type="text"
+                     id="state-lookup-address"
+                     th:field="*{address}"
+                     class="form-control form-control-lg tt-input tt-primary-input"
+                     placeholder="Enter a home address"
+                     autocomplete="street-address">
+            </div>
+            <div class="col-12 text-md-end">
+              <button type="submit" class="btn tt-btn-primary btn-lg tt-home-submit">Find nearby sites</button>
+            </div>
+          </form>
         </div>
       </div>
-    </article>
-  </div>
-
-  <section class="mt-4" th:if="${!viewModel.sitesWithoutBoundary().isEmpty()}">
-    <h2 class="h4 mb-2">Active sites with no published boundary</h2>
-    <p class="text-muted">EPA has not published a boundary for these sites, so Site Plain cannot calculate distance to them and they do not appear in address lookup results.</p>
-    <div class="vstack gap-3">
-      <article class="card shadow-sm" th:each="site : ${viewModel.sitesWithoutBoundary()}">
-        <div class="card-body d-flex justify-content-between align-items-start gap-3 flex-wrap">
-          <div>
-            <h3 class="h5 mb-2"><a th:href="@{/site/{epaId}(epaId=${site.epaId})}" th:text="${site.siteName}">Site Name</a></h3>
-            <span th:replace="fragments/exposure-badge :: badge(${site.exposureStatusCode}, ${site.exposureStatusLabel})"></span>
-          </div>
-        </div>
-      </article>
     </div>
+
+    <dl class="tt-kpi-strip" th:with="red=${viewModel.statusCount('red')}">
+      <div class="tt-kpi-item"><dt>Active sites</dt><dd th:text="${viewModel.siteCount}">0</dd></div>
+      <div class="tt-kpi-item"><dt>Not under control</dt><dd th:classappend="${red > 0} ? 'tt-alert-text'" th:text="${red}">0</dd></div>
+      <div class="tt-kpi-item"><dt>Under control</dt><dd th:text="${viewModel.statusCount('yellow')}">0</dd></div>
+      <div class="tt-kpi-item"><dt>Long-term protection achieved</dt><dd th:text="${viewModel.statusCount('green')}">0</dd></div>
+      <div class="tt-kpi-item"><dt>Insufficient data or not reported</dt><dd th:text="${viewModel.statusCount('gray')}">0</dd></div>
+    </dl>
   </section>
+
+  <div class="row">
+    <div class="col-xl-9">
+      <section class="tt-report-section" th:if="${!viewModel.sitesWithBoundary().isEmpty()}">
+        <div class="tt-report-section-header">
+          <h2 class="tt-report-section-title">Sites with a published boundary</h2>
+          <span class="tt-report-section-count"
+                th:with="n=${#lists.size(viewModel.sitesWithBoundary())}"
+                th:text="${n + (n == 1 ? ' site' : ' sites')}">115 sites</span>
+        </div>
+        <div class="mb-3" th:insert="~{fragments/status-legend :: legend}"></div>
+        <div class="table-responsive">
+          <table class="table tt-record-table sp-site-table mb-0">
+            <thead>
+            <tr>
+              <th scope="col">Site</th>
+              <th scope="col">EPA exposure status</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:each="site : ${viewModel.sitesWithBoundary()}">
+              <td>
+                <a th:href="@{/site/{epaId}(epaId=${site.epaId})}" th:text="${site.siteName}">AMERICAN CYANAMID CO</a>
+                <div class="tt-cell-detail" th:text="${site.epaId}">NJD002173276</div>
+              </td>
+              <td><span th:replace="~{fragments/exposure-badge :: badge(${site.exposureStatusCode}, ${site.exposureStatusLabel})}"></span></td>
+            </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="tt-report-section" th:if="${!viewModel.sitesWithoutBoundary().isEmpty()}">
+        <div class="tt-report-section-header">
+          <h2 class="tt-report-section-title">Active sites with no published boundary</h2>
+          <span class="tt-report-section-count"
+                th:with="n=${#lists.size(viewModel.sitesWithoutBoundary())}"
+                th:text="${n + (n == 1 ? ' site' : ' sites')}">2 sites</span>
+        </div>
+        <p class="tt-section-note">EPA has not published a boundary for these sites, so Site Plain cannot calculate distance to them and they do not appear in address lookup results.</p>
+        <div class="table-responsive">
+          <table class="table tt-record-table sp-site-table mb-0">
+            <thead>
+            <tr>
+              <th scope="col">Site</th>
+              <th scope="col">EPA exposure status</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:each="site : ${viewModel.sitesWithoutBoundary()}">
+              <td>
+                <a th:href="@{/site/{epaId}(epaId=${site.epaId})}" th:text="${site.siteName}">Site Name</a>
+                <div class="tt-cell-detail" th:text="${site.epaId}">NJD000000000</div>
+              </td>
+              <td><span th:replace="~{fragments/exposure-badge :: badge(${site.exposureStatusCode}, ${site.exposureStatusLabel})}"></span></td>
+            </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
 </main>
-<div th:replace="fragments/footer :: footer"></div>
+<div th:replace="~{fragments/footer :: footer}"></div>
 </body>
 </html>

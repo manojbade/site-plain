@@ -1475,6 +1475,22 @@ button:focus-visible,
   border-width: 2px;
 }
 
+/* 24px radios (WCAG 2.5.8 target size), with the label beside them */
+.sp-choice-group .form-check {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.5rem;
+  min-height: 2rem;
+  padding-left: 0;
+}
+
+.sp-choice-group .form-check .form-check-input {
+  float: none;
+  height: 1.5rem;
+  margin: 0;
+  width: 1.5rem;
+}
+
 .sp-choice-group .form-check-input:checked {
   background-color: var(--tt-ink);
   border-color: var(--tt-ink);
@@ -1509,64 +1525,120 @@ button:focus-visible,
   }
 }
 
-/* ==========================================================================
-   Legacy rules for pages not restyled yet (results, site, state, site search).
-   Kept flat so those pages stay readable in the meantime. Remove once they
-   use the components above.
-   ========================================================================== */
-.card {
-  --bs-card-border-color: var(--tt-border-strong);
-  --bs-card-border-radius: var(--tt-radius-md);
-  --bs-card-inner-border-radius: var(--tt-radius-md);
-  background: var(--tt-surface);
-}
-
-.card.shadow-sm {
-  box-shadow: none !important;
-}
-
-.display-6 {
-  font-weight: 800;
-}
-
-.official-resource-link {
-  align-items: center;
-  display: flex;
-  font-weight: 700;
-  gap: 1rem;
-  justify-content: space-between;
-  padding: 0.65rem 0;
-}
-
-.official-resource-link + .official-resource-link {
+/* Plain ruled list of links (results: state sites with no published boundary) */
+.sp-link-list {
   border-top: 1px solid var(--tt-border);
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
-.official-resource-icon {
-  color: var(--tt-muted);
-  flex: 0 0 auto;
+.sp-link-list li {
+  border-bottom: 1px solid var(--tt-border);
+  padding: 0.55rem 0;
 }
 
-.site-nav-button {
-  align-items: center;
-  background: #fff;
-  border: 1px solid var(--tt-ink);
-  border-radius: var(--tt-radius-sm);
-  color: var(--tt-ink);
-  display: inline-flex;
-  font-size: 0.92rem;
-  font-weight: 700;
-  min-height: 2.5rem;
-  padding: 0.5rem 0.85rem;
-  text-decoration: none;
+/* Side card link lists: links keep weight 700 from .tt-source-list */
+.sp-side-links li {
+  padding: 0.5rem 0;
 }
 
-.site-nav-button:hover {
-  background: var(--tt-bg-alt);
+/* Caption under the results map */
+.sp-map-caption {
+  border-top: 1px solid var(--tt-border);
+  padding: 0.75rem 1rem 1rem;
+}
+
+/* EPA's own pathway paragraph on the site page */
+.sp-epa-text {
+  line-height: 1.6;
+  max-width: 46rem;
+}
+
+/* Two-column site tables on the state page: the status column wraps instead of scrolling sideways */
+.sp-site-table .sp-status {
+  white-space: normal;
+}
+
+.sp-directory-name {
   color: var(--tt-ink);
 }
 
-.site-search-match + .site-search-match {
-  border-top: 1px solid var(--tt-border);
-  padding-top: 1rem;
+/* Placeholder text: darker than Tap Truth's #6f7d8c (4.21:1) so it reaches 4.5:1 on white */
+.tt-primary-input.form-control::placeholder,
+.tt-input.form-control::placeholder {
+  color: #5f6d7c;
+}
+
+/* Larger tap targets on phones: 44px buttons and padded inline links */
+@media (max-width: 767.98px) {
+  .tt-nav-button,
+  .tt-report-share-button {
+    min-height: 2.75rem;
+  }
+
+  .tt-nav-link,
+  .tt-footer-link,
+  .tt-btn-check-another,
+  .sp-site-links a {
+    display: inline-block;
+    padding: 0.4rem 0;
+  }
+
+  .sp-site-name a,
+  .sp-link-list a,
+  .sp-side-links a,
+  .sp-site-table td:first-child a {
+    display: inline-block;
+    padding: 0.3rem 0;
+  }
+
+  .sp-link-list li,
+  .sp-side-links li {
+    padding: 0.35rem 0;
+  }
+}
+
+@media print {
+  .sp-map-card {
+    display: none !important;
+  }
+}
+
+/* State page site tables: ink site names like the results list, and one stacked record per row on small phones */
+.sp-site-table td:first-child a {
+  color: var(--tt-ink);
+  font-weight: 600;
+  text-decoration-color: var(--tt-border-strong);
+}
+
+.sp-site-table td:first-child a:hover {
+  color: var(--tt-accent-strong);
+  text-decoration-color: var(--tt-accent-strong);
+}
+
+@media (max-width: 575.98px) {
+  .tt-record-table.sp-site-table thead th:last-child {
+    display: none;
+  }
+
+  .tt-record-table.sp-site-table tbody tr {
+    border-bottom: 1px solid var(--tt-border);
+    display: block;
+    padding: 0.6rem 0;
+  }
+
+  .tt-record-table.sp-site-table tbody tr:last-child {
+    border-bottom-color: var(--tt-border-strong);
+  }
+
+  .tt-record-table.sp-site-table tbody tr > td {
+    border-bottom: 0;
+    display: block;
+    padding: 0;
+  }
+
+  .tt-record-table.sp-site-table tbody tr > td + td {
+    margin-top: 0.35rem;
+  }
 }

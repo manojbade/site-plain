@@ -30,4 +30,13 @@ class DistanceFormatterTest {
     void format_underTenFeetOutsideUsesImmediateAdjacencyMessage() {
         assertThat(DistanceFormatter.format(1.5)).isEqualTo("Less than 10 feet (immediately adjacent to site boundary)");
     }
+
+    @Test
+    void shortFormat_fitsTheSummaryRow() {
+        assertThat(DistanceFormatter.shortFormat(0)).isEqualTo("Inside");
+        assertThat(DistanceFormatter.shortFormat(2)).isEqualTo("Under 10 ft");
+        assertThat(DistanceFormatter.shortFormat(100)).isEqualTo("328 ft");
+        assertThat(DistanceFormatter.shortFormat(1300)).isEqualTo("0.8 mi");
+        assertThat(DistanceFormatter.shortFormat(5000)).isEqualTo("3.1 mi");
+    }
 }

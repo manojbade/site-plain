@@ -7,6 +7,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.siteplain.data.loader.SeoPageCacheBuilder;
 import com.siteplain.data.loader.StatePageCacheBuilder;
 import java.util.List;
+import java.util.Map;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,6 +29,12 @@ import org.springframework.test.web.servlet.MockMvc;
 @ActiveProfiles("test")
 @EnabledIfEnvironmentVariable(named = "TEST_DATASOURCE_URL", matches = ".+")
 class PageRenderingIntegrationTest {
+
+    /** A script tag without a src attribute, that is, an inline script block. */
+    private static final Pattern INLINE_SCRIPT = Pattern.compile("<script(?![^>]*\\bsrc=)[^>]*>", Pattern.CASE_INSENSITIVE);
+    private static final Pattern STYLE_ATTRIBUTE = Pattern.compile("\\sstyle\\s*=", Pattern.CASE_INSENSITIVE);
+    private static final Pattern STYLE_BLOCK = Pattern.compile("<style[\\s>]", Pattern.CASE_INSENSITIVE);
+    private static final Pattern RESULTS_SCRIPT = Pattern.compile("<script src=\"/js/results(-[0-9a-f]{32})?\\.js\"></script>");
 
     private static final List<String> IDS = List.of("OHR000000001", "OHR000000002");
 
@@ -118,10 +126,12 @@ class PageRenderingIntegrationTest {
                         .param("approx", "city"))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        assertThat(approximate).contains("Approximate location.")
-                .contains("only to the following\n      <span>city</span>:\n      "
-                        + "<span>Dayton, Montgomery County, Ohio, United States</span>")
+        assertThat(approximate).contains("<span class=\"sp-notice-title\">Approximate location</span>")
                 .contains("approx=city");
+        assertThat(approximate.replaceAll("\\s+", " ")).contains("only to the following <span>city</span>: "
+                + "<span>Dayton, Montgomery County, Ohio, United States</span>");
+        // The caveat comes before the summary numbers.
+        assertThat(approximate.indexOf("sp-notice-title")).isLessThan(approximate.indexOf("tt-kpi-strip"));
 
         String exact = mockMvc.perform(get("/results")
                         .param("lat", "39.825")
@@ -130,7 +140,7 @@ class PageRenderingIntegrationTest {
                         .param("state", "OH"))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        assertThat(exact).doesNotContain("Approximate location.");
+        assertThat(exact).doesNotContain("Approximate location");
     }
 
     @Test
@@ -257,6 +267,117 @@ class PageRenderingIntegrationTest {
         assertThat(html).doesNotContain("viewModel.")
                 .contains("content=\"2 active EPA Superfund sites in Ohio. "
                         + "Enter your address to see how close you are to any of them.\"");
+    }
+
+    @Test
+    void dataPages_haveNoInlineScriptsStylesOrEmDashes() throws Exception {
+        Map<String, String> pages = Map.of(
+                "results with sites", page(get("/results").param("lat", "39.825").param("lng", "-84.055")
+                        .param("address", "1 Main St, Dayton, OH").param("state", "OH"), 200),
+                "results approximate", page(get("/results").param("lat", "39.825").param("lng", "-84.055")
+                        .param("address", "Dayton, OH").param("state", "OH").param("approx", "city"), 200),
+                "results without sites", page(get("/results").param("lat", "38.5").param("lng", "-116.5")
+                        .param("address", "Somewhere, NV").param("state", "NV"), 200),
+                "results unresolved", page(get("/results").param("error", "unresolved").param("address", "nowhere"), 200),
+                "site", page(get("/site/OHR000000001"), 200),
+                "site without boundary", page(get("/site/OHR000000002"), 200),
+                "state", page(get("/state/OH"), 200),
+                "site search", page(get("/search/sites").param("q", "render test"), 200),
+                "site search without match", page(get("/search/sites").param("q", "zzqx no such site"), 200));
+        pages.forEach((name, html) -> {
+            assertThat(INLINE_SCRIPT.matcher(html).find()).as("inline script on %s", name).isFalse();
+            assertThat(STYLE_ATTRIBUTE.matcher(html).find()).as("style attribute on %s", name).isFalse();
+            assertThat(STYLE_BLOCK.matcher(html).find()).as("style block on %s", name).isFalse();
+            assertThat(html).as("old markup on %s", name)
+                    .doesNotContain("\u2014")
+                    .doesNotContain("&mdash;")
+                    .doesNotContain("site(s)")
+                    .doesNotContain("alert-warning")
+                    .doesNotContain("class=\"card")
+                    .doesNotContain("site-nav-button")
+                    .doesNotContain("bootstrap.bundle")
+                    .doesNotContain(" th:")
+                    .contains("class=\"bg-page\"");
+        });
+        assertThat(RESULTS_SCRIPT.matcher(pages.get("results with sites")).find()).isTrue();
+        assertThat(pages.get("results with sites")).doesNotContain("Link copied!");
+    }
+
+    @Test
+    void resultsPage_showsSummaryRowAndPutsTheMapAfterTheSiteList() throws Exception {
+        String inside = page(get("/results").param("lat", "39.825").param("lng", "-84.055")
+                .param("address", "1 Main St, Dayton, OH").param("state", "OH"), 200);
+        assertThat(inside).contains("<dt>Active sites within 3 miles</dt>")
+                .contains("<dt>Nearest site boundary</dt><dd>Inside</dd>")
+                .contains("<dt>Exposure not under control</dt><dd class=\"tt-alert-text\">1</dd>")
+                .contains("<span class=\"sp-site-distance is-inside\">Inside the EPA site boundary</span>")
+                .contains("1 active Superfund site found within 3 miles");
+
+        // Map data travels in data- attributes for /js/results.js; the map column comes after the list,
+        // so on phones the map sits below the sites.
+        assertThat(inside).contains("id=\"results-map\"")
+                .contains("data-geojson=\"{&quot;type&quot;:&quot;FeatureCollection&quot;")
+                .contains("data-lat=\"39.825\"")
+                .contains("role=\"img\"");
+        assertThat(inside.indexOf("class=\"sp-site-list\"")).isPositive()
+                .isLessThan(inside.indexOf("id=\"results-map\""));
+
+        // The state's no-boundary site is listed in its own section.
+        assertThat(inside).contains("Active sites in this state with no published boundary")
+                .contains("href=\"/site/OHR000000002\"");
+
+        String none = page(get("/results").param("lat", "38.5").param("lng", "-116.5")
+                .param("address", "Somewhere, NV").param("state", "NV"), 200);
+        assertThat(none).contains("No active EPA Superfund sites found within 3 miles of this address.")
+                .contains("0 active Superfund sites found within 3 miles")
+                .doesNotContain("tt-kpi-strip")
+                .doesNotContain("id=\"results-map\"");
+    }
+
+    @Test
+    void sitePages_useReportLayoutWithLabelledLookupAndNoBoundaryNotice() throws Exception {
+        String site = page(get("/site/OHR000000001"), 200);
+        assertThat(site).contains("<h1 class=\"tt-page-title mb-3\">Render Test Landfill</h1>")
+                .contains("for=\"site-lookup-address\"")
+                .contains("id=\"site-lookup-address\"")
+                .contains("<span class=\"tt-fact-value\">HENC</span>")
+                .contains("href=\"/state/OH\"")
+                .doesNotContain("No published boundary");
+
+        String unmapped = page(get("/site/OHR000000002"), 200);
+        assertThat(unmapped).contains("<span class=\"sp-notice-title\">No published boundary</span>")
+                .contains("EPA has not published a boundary for this site, so Site Plain cannot calculate how far an address is from it")
+                .doesNotContain("site-lookup-address");
+    }
+
+    @Test
+    void statePage_usesRuledTablesSummaryRowAndLegend() throws Exception {
+        String state = page(get("/state/OH"), 200);
+        assertThat(state).contains("tt-record-table")
+                .contains("class=\"sp-status-legend\"")
+                .contains("<dt>Not under control</dt><dd class=\"tt-alert-text\">")
+                .contains("Sites with a published boundary")
+                .contains("Active sites with no published boundary")
+                .contains("for=\"state-lookup-address\"")
+                .contains("<div class=\"tt-cell-detail\">OHR000000002</div>");
+    }
+
+    @Test
+    void siteSearch_listsMatchesAsDirectoryRowsWithStatusSquares() throws Exception {
+        String search = page(get("/search/sites").param("q", "render test"), 200);
+        assertThat(search).contains("class=\"tt-directory-item\" href=\"/site/OHR000000001\"")
+                .contains("<span class=\"sp-status sp-status-red\">Human exposure is NOT currently under control</span>")
+                .contains("for=\"site-search-q\"");
+
+        String none = page(get("/search/sites").param("q", "zzqx no such site"), 200);
+        assertThat(none).contains("No matching site found").contains("Try an address lookup instead");
+    }
+
+    private String page(org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request,
+                        int expectedStatus) throws Exception {
+        return mockMvc.perform(request)
+                .andExpect(status().is(expectedStatus))
+                .andReturn().getResponse().getContentAsString();
     }
 
     private int auditRowCount() {
