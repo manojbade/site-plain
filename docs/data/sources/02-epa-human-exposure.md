@@ -43,7 +43,7 @@ Active sites with no boundary (`has_boundary = false`, 15 on 2026-10-10) get a `
 | HEIC | No EPA definition found; shown as insufficient data | Insufficient data | Gray |
 | null / missing / no record | Not reported | Not reported | Gray |
 
-HEIC appears in the feed (2 rows on 2026-10-10, both non-Final sites) but EPA's published definitions do not cover it, so it is shown as insufficient data rather than as a raw code. Each site page, results page and results PDF shows "EPA exposure status as of <date>": the HTTP `Last-Modified` date (UTC) of the live feed as recorded in `data_source_state`, or, when none was recorded, the date the live rows were loaded (max `loaded_at` of `npl_human_exposure`).
+HEIC appears in the feed (2 rows on 2026-10-10, both non-Final sites) but EPA's published definitions do not cover it, so it is shown as insufficient data rather than as a raw code. Each site page, results page and results PDF shows "EPA exposure status as of <date>": the HTTP `Last-Modified` of the live feed as recorded in `data_source_state`, or, when none was recorded, when the live rows were loaded (max `loaded_at` of `npl_human_exposure`). Either is shown as a calendar date in America/New_York, since EPA publishes on Eastern time (an evening update is after midnight UTC).
 
 The exact mapping lives in `ExposureStatusMapper`. Red/yellow/green reflects EPA's exposure-control assessment, not whether a site is actively dangerous. Sites with a Final boundary but no exposure record render Gray ("Not reported").
 

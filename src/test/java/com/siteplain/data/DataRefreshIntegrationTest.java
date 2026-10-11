@@ -516,12 +516,22 @@ class DataRefreshIntegrationTest {
     @Test
     void statusAsOfDate_prefersTheFeedLastModifiedThenTheLoadDate() throws Exception {
         load("OLD", true);
-        // file:// sources have no Last-Modified, so the date is the load date.
-        assertThat(humanExposureRepository.statusAsOfDate()).contains(java.time.LocalDate.now());
+        // file:// sources have no Last-Modified, so the date is the load date, in Eastern time.
+        assertThat(humanExposureRepository.statusAsOfDate())
+                .contains(java.time.LocalDate.now(java.time.ZoneId.of("America/New_York")));
 
         jdbcTemplate.update("UPDATE data_source_state SET last_modified = TIMESTAMPTZ '2026-10-09 23:30:00+00' "
                 + "WHERE dataset = 'human_exposure'");
         assertThat(humanExposureRepository.statusAsOfDate()).contains(java.time.LocalDate.of(2026, 10, 9));
+
+        // EPA publishes in Eastern time: 02:30 UTC on October 11 is still October 10 in New York.
+        jdbcTemplate.update("UPDATE data_source_state SET last_modified = TIMESTAMPTZ '2026-10-11 02:30:00+00' "
+                + "WHERE dataset = 'human_exposure'");
+        assertThat(humanExposureRepository.statusAsOfDate()).contains(java.time.LocalDate.of(2026, 10, 10));
+        // And 05:00 UTC is 01:00 in New York, the same calendar day.
+        jdbcTemplate.update("UPDATE data_source_state SET last_modified = TIMESTAMPTZ '2026-10-11 05:00:00+00' "
+                + "WHERE dataset = 'human_exposure'");
+        assertThat(humanExposureRepository.statusAsOfDate()).contains(java.time.LocalDate.of(2026, 10, 11));
     }
 
     private Object maxLoadedAt(String table) {

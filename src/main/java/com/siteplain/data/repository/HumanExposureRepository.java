@@ -112,16 +112,19 @@ public class HumanExposureRepository {
 
     /**
      * The "EPA exposure status as of" date: the feed's HTTP Last-Modified (when EPA last changed the
-     * file) recorded for the live feed in data_source_state, as a UTC date. When the live feed was
-     * loaded without a Last-Modified header, or before data_source_state existed, it falls back to
-     * when the live rows were loaded (max loaded_at).
+     * file) recorded for the live feed in data_source_state, as a calendar date in America/New_York,
+     * since EPA works and publishes on Eastern time (an evening update is 00:00 to 04:59 UTC the next
+     * day). When the live feed was loaded without a Last-Modified header, or before data_source_state
+     * existed, it falls back to when the live rows were loaded (max loaded_at, a local timestamp in the
+     * session time zone it was written in), also as an Eastern date.
      */
     public Optional<LocalDate> statusAsOfDate() {
         List<LocalDate> rows = jdbcTemplate.query("""
                 SELECT COALESCE(
-                  (SELECT (last_modified AT TIME ZONE 'UTC')::date
+                  (SELECT (last_modified AT TIME ZONE 'America/New_York')::date
                    FROM data_source_state WHERE dataset = 'human_exposure'),
-                  (SELECT max(loaded_at)::date FROM npl_human_exposure)) AS as_of
+                  (SELECT (max(loaded_at)::timestamptz AT TIME ZONE 'America/New_York')::date
+                   FROM npl_human_exposure)) AS as_of
                 """, (rs, rowNum) -> rs.getObject("as_of", LocalDate.class));
         return rows.stream().filter(Objects::nonNull).findFirst();
     }
