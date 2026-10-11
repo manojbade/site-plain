@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!--/* Every results page, resolved or not, is one person's lookup: keep it out of search engines.
+       robots.txt also disallows /results, so crawlers that honor it never fetch these pages at all. */-->
+  <meta name="robots" content="noindex">
   <title>Results | Site Plain</title>
   <th:block th:replace="~{fragments/head :: assets}"></th:block>
   <link th:if="${viewModel.siteBoundaryGeojson != null}" href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet">

@@ -1,4 +1,7 @@
 User-agent: *
 Allow: /
+# Results describe one person's lookup, and /api/ serves the search box: neither belongs in search engines.
+Disallow: /results
+Disallow: /api/
 
 Sitemap: https://site-plain.com/sitemap.xml

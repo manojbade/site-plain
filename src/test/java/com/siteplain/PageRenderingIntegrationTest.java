@@ -510,6 +510,24 @@ class PageRenderingIntegrationTest {
         }
     }
 
+    @Test
+    void resultsPages_areNoindexAndRobotsTxtDisallowsResultsAndApi() throws Exception {
+        String noindex = "<meta name=\"robots\" content=\"noindex\">";
+        assertThat(page(results(39.825, -84.055, "1 Main St, Dayton, OH", "OH", null), 200)).contains(noindex);
+        assertThat(page(results(38.5, -116.5, "Somewhere, NV", "NV", null), 200)).contains(noindex);
+        assertThat(page(get("/results").param("error", "unresolved"), 200)).contains(noindex);
+        assertThat(page(get("/results").param("lat", "39.825").param("lng", "-84.055"), 200)).contains(noindex);
+        // Pages meant for search engines stay indexable.
+        assertThat(page(get("/site/OHR000000001"), 200)).doesNotContain("noindex");
+        assertThat(page(get("/"), 200)).doesNotContain("noindex");
+
+        String robots = page(get("/robots.txt"), 200);
+        assertThat(robots).containsPattern("(?m)^Disallow: /results$")
+                .containsPattern("(?m)^Disallow: /api/$")
+                .containsPattern("(?m)^Sitemap: https://site-plain\\.com/sitemap\\.xml$")
+                .doesNotContain("Disallow: /\n");
+    }
+
     /** GET /results with an encrypted link, as POST /lookup would have issued it. */
     private MockHttpServletRequestBuilder results(double lat, double lng, String label, String state, String approx) {
         return get("/results").param("r", resultsTokens.encode(

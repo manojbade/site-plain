@@ -126,7 +126,8 @@ class LookupFlowIntegrationTest {
 
         String html = mockMvc.perform(get(location)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         assertThat(html).contains("Address could not be resolved").doesNotContain("zzqx nowhere")
-                .doesNotContain("Submitted address");
+                .doesNotContain("Submitted address")
+                .contains("<meta name=\"robots\" content=\"noindex\">");
         assertThat(auditRows()).isEqualTo(auditBefore + 1);
     }
 
