@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title th:text="${status == 500} ? 'Error | Site Plain' : 'Not Found | Site Plain'">Not Found | Site Plain</title>
+  <!--/* kind: busy (429, 503), server (other 5xx), request (other 4xx) or missing (404, or no status). */-->
+  <title th:with="kind=${T(com.siteplain.web.controller.SitePlainErrorController).kind(status)}"
+         th:text="${kind == 'missing'} ? 'Not Found | Site Plain' : (${kind == 'busy'} ? 'Busy | Site Plain' : 'Error | Site Plain')">Not Found | Site Plain</title>
   <th:block th:replace="~{fragments/head :: assets}"></th:block>
 </head>
 <body class="bg-page">
@@ -11,9 +13,9 @@
 <main class="container py-5">
   <div class="row justify-content-center">
     <div class="col-lg-7">
-      <div class="tt-surface">
-        <!--/* Server errors (status 500) and missing pages (404) share this template but not its wording. */-->
-        <section class="tt-state-card" th:if="${status == 500}">
+      <div class="tt-surface" th:with="kind=${T(com.siteplain.web.controller.SitePlainErrorController).kind(status)}">
+        <!--/* Server errors, busy refusals, bad requests and missing pages share this template but not its wording. */-->
+        <section class="tt-state-card" th:if="${kind == 'server'}">
           <p class="eyebrow mb-2">Something went wrong</p>
           <h1 class="h2 mb-3">Site Plain could not finish this request</h1>
           <p class="tt-muted-copy mb-4">Try again in a minute. If it keeps happening, use the <a th:href="@{/feedback}">feedback form</a>.</p>
@@ -22,7 +24,25 @@
             <a th:href="@{/about}" class="btn tt-btn-secondary">About Site Plain</a>
           </div>
         </section>
-        <section class="tt-state-card" th:unless="${status == 500}">
+        <section class="tt-state-card" th:if="${kind == 'busy'}">
+          <p class="eyebrow mb-2">Busy</p>
+          <h1 class="h2 mb-3">Site Plain is busy right now</h1>
+          <p class="tt-muted-copy mb-4">Too many requests arrived at once. Wait a minute, then try again.</p>
+          <div class="d-flex flex-wrap gap-2">
+            <a th:href="@{/}" class="btn tt-btn-primary">Go to the homepage</a>
+            <a th:href="@{/about}" class="btn tt-btn-secondary">About Site Plain</a>
+          </div>
+        </section>
+        <section class="tt-state-card" th:if="${kind == 'request'}">
+          <p class="eyebrow mb-2">Request not valid</p>
+          <h1 class="h2 mb-3">Site Plain could not use this request</h1>
+          <p class="tt-muted-copy mb-4">The link or form was incomplete, too long or not valid. Go back and try again, or start a new lookup.</p>
+          <div class="d-flex flex-wrap gap-2">
+            <a th:href="@{/}" class="btn tt-btn-primary">Go to the homepage</a>
+            <a th:href="@{/about}" class="btn tt-btn-secondary">About Site Plain</a>
+          </div>
+        </section>
+        <section class="tt-state-card" th:if="${kind == 'missing'}">
           <p class="eyebrow mb-2">404</p>
           <h1 class="h2 mb-3">Page not found</h1>
           <p class="tt-muted-copy mb-4" th:text="${message != null ? message : 'The requested page could not be found.'}">The requested page could not be found.</p>

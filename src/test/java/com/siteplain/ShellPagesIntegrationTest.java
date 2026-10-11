@@ -3,21 +3,30 @@ package com.siteplain;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import jakarta.servlet.RequestDispatcher;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.stereotype.Controller;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.bind.annotation.GetMapping;
 
 /**
  * Renders the shell pages (home, about, feedback, thank-you, error pages) and checks the markup
@@ -27,6 +36,7 @@ import org.springframework.test.web.servlet.MockMvc;
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @EnabledIfEnvironmentVariable(named = "TEST_DATASOURCE_URL", matches = ".+")
+@ExtendWith(OutputCaptureExtension.class)
 class ShellPagesIntegrationTest {
 
     /** A script tag without a src attribute, that is, an inline script block. */
@@ -135,6 +145,46 @@ class ShellPagesIntegrationTest {
     }
 
     @Test
+    void clientErrors_are4xxPagesWithOneWarnLineAndNoStackTrace(CapturedOutput output) throws Exception {
+        String wrongMethod = mockMvc.perform(get("/lookup"))
+                .andExpect(status().isMethodNotAllowed())
+                .andExpect(header().string("Allow", "POST"))
+                .andReturn().getResponse().getContentAsString();
+        assertThat(wrongMethod).contains("Site Plain could not use this request").doesNotContain("Page not found");
+
+        mockMvc.perform(post("/results")).andExpect(status().isMethodNotAllowed());
+        String missingParam = mockMvc.perform(post("/feedback"))
+                .andExpect(status().isBadRequest())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(missingParam).contains("Site Plain could not use this request");
+        mockMvc.perform(get("/results").param("lat", "abc").param("lng", "-84.0"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/feedback").param("pageType", "general").param("helpful", "maybe"))
+                .andExpect(status().isBadRequest());
+
+        assertThat(output.getOut() + output.getErr())
+                .contains("Client error 405 on GET /lookup (HttpRequestMethodNotSupportedException)")
+                .contains("Client error 400 on POST /feedback (MissingServletRequestParameterException)")
+                .doesNotContain("Unhandled application error")
+                .doesNotContain("\tat org.springframework");
+    }
+
+    @Test
+    void errorPath_isAPlainPageWithTheRealStatus() throws Exception {
+        // Requested directly there is no error status: a missing page, not Boot's status 999 JSON.
+        String direct = page("/error", 404);
+        assertThat(direct).contains("Page not found").doesNotContain("999");
+
+        String containerBadRequest = mockMvc.perform(get("/error").requestAttr(RequestDispatcher.ERROR_STATUS_CODE, 400))
+                .andExpect(status().isBadRequest())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(containerBadRequest).contains("Site Plain could not use this request");
+
+        mockMvc.perform(get("/error").requestAttr(RequestDispatcher.ERROR_STATUS_CODE, 500))
+                .andExpect(status().isInternalServerError());
+    }
+
+    @Test
     void errorPages_sayNotFoundOnlyForMissingPages() throws Exception {
         String missing = page("/no-such-page", 404);
         assertThat(missing).contains("Page not found").contains("<p class=\"eyebrow mb-2\">404</p>");
@@ -151,10 +201,28 @@ class ShellPagesIntegrationTest {
                 .andReturn().getResponse().getContentAsString();
     }
 
-    /** A POST without the required pageType reaches the catch-all handler, which renders the server error page. */
+    /** A genuine server error, from a test-only endpoint, reaches the catch-all handler and its 500 page. */
     private String serverErrorPage() throws Exception {
-        return mockMvc.perform(post("/feedback"))
+        return mockMvc.perform(get(FailingController.PATH))
                 .andExpect(status().isInternalServerError())
                 .andReturn().getResponse().getContentAsString();
+    }
+
+    @TestConfiguration
+    static class FailingControllerConfig {
+        @Bean
+        FailingController failingController() {
+            return new FailingController();
+        }
+    }
+
+    @Controller
+    static class FailingController {
+        static final String PATH = "/test-only/server-error";
+
+        @GetMapping(PATH)
+        String fail() {
+            throw new IllegalStateException("test-only server error");
+        }
     }
 }
