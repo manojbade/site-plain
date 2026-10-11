@@ -1,5 +1,6 @@
 package com.siteplain.web.advice;
 
+import com.siteplain.service.ServiceBusyException;
 import com.siteplain.web.BadRequestException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -84,6 +85,15 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Void> handleNotAcceptable(HttpMediaTypeNotAcceptableException exception, HttpServletRequest request) {
         logClientError(HttpServletResponse.SC_NOT_ACCEPTABLE, exception, request);
         return ResponseEntity.status(HttpServletResponse.SC_NOT_ACCEPTABLE).build();
+    }
+
+    /** A rate limit (429) or a full concurrency cap (503): Retry-After and the plain busy page, no stack trace. */
+    @ExceptionHandler(ServiceBusyException.class)
+    public String handleBusy(ServiceBusyException exception, HttpServletResponse response, Model model) {
+        response.setStatus(exception.status());
+        response.setHeader(HttpHeaders.RETRY_AFTER, Long.toString(exception.retryAfterSeconds()));
+        model.addAttribute("status", exception.status());
+        return "error/not-found";
     }
 
     @ExceptionHandler(Exception.class)

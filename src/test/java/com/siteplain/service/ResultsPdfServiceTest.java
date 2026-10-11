@@ -17,7 +17,7 @@ class ResultsPdfServiceTest {
 
     @Test
     void generateResultsPdf_returnsPdfBytes() {
-        ResultsPdfService service = new ResultsPdfService(templateEngine(), siteProperties());
+        ResultsPdfService service = new ResultsPdfService(templateEngine(), siteProperties(), WorkLimits.unlimited());
         ResultsViewModel viewModel = viewModel(null);
 
         byte[] pdf = service.generateResultsPdf(viewModel);
@@ -75,7 +75,7 @@ class ResultsPdfServiceTest {
                 .doesNotContain("<b>vapor")
                 .doesNotContain("<img");
         // The escaped text still renders as a PDF.
-        assertThat(new ResultsPdfService(templateEngine(), siteProperties()).generateResultsPdf(viewModel(null, site)))
+        assertThat(new ResultsPdfService(templateEngine(), siteProperties(), WorkLimits.unlimited()).generateResultsPdf(viewModel(null, site)))
                 .startsWith("%PDF-".getBytes(StandardCharsets.ISO_8859_1));
     }
 

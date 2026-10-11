@@ -40,21 +40,28 @@ public class GeocodingService {
      */
     private final ExpiringLruCache<String, GeocodedAddress> cache;
 
+    private final Bulkhead geocoding;
+    private final NominatimGate nominatimGate;
+
     @Autowired
     public GeocodingService(HttpClient httpClient,
                             ObjectMapper objectMapper,
-                            GeocoderProperties geocoderProperties) {
-        this(httpClient, objectMapper, geocoderProperties, Clock.systemUTC());
+                            GeocoderProperties geocoderProperties,
+                            WorkLimits workLimits) {
+        this(httpClient, objectMapper, geocoderProperties, workLimits, Clock.systemUTC());
     }
 
     GeocodingService(HttpClient httpClient,
                      ObjectMapper objectMapper,
                      GeocoderProperties geocoderProperties,
+                     WorkLimits workLimits,
                      Clock clock) {
         this.httpClient = httpClient;
         this.objectMapper = objectMapper;
         this.geocoderProperties = geocoderProperties;
         this.cache = new ExpiringLruCache<>(geocoderProperties.getCacheMaxEntries(), clock);
+        this.geocoding = workLimits.geocoding();
+        this.nominatimGate = workLimits.nominatim();
     }
 
     /** What one geocoder said: a match, a definite "no match", or no usable answer (network, status, body). */
@@ -69,7 +76,11 @@ public class GeocodingService {
         }
     }
 
-    /** Census first, then Nominatim. A cached answer makes no outbound call. */
+    /**
+     * Census first, then Nominatim. A cached answer makes no outbound call. Outbound calls are capped
+     * globally (WorkLimits): past the cap, or when Nominatim's one-per-second slot is too far off,
+     * this throws ServiceBusyException rather than reporting the address as not found.
+     */
     public GeocodedAddress geocode(String rawAddress) {
         String address = stripCountrySuffix(rawAddress);
         String key = cacheKey(address);
@@ -77,6 +88,10 @@ public class GeocodingService {
         if (cached != null) {
             return cached.resolved() ? cached : GeocodedAddress.unresolved(rawAddress);
         }
+        return geocoding.call(() -> geocodeUncached(rawAddress, address, key));
+    }
+
+    private GeocodedAddress geocodeUncached(String rawAddress, String address, String key) {
         Attempt census = geocodeWithCensus(address);
         if (census.outcome() == Outcome.MATCH) {
             return remember(key, census.result(), geocoderProperties.getCacheTtl());
@@ -167,6 +182,10 @@ public class GeocodingService {
     }
 
     private Attempt geocodeWithNominatim(String rawAddress) {
+        if (!nominatimGate.awaitTurn()) {
+            throw new ServiceBusyException(ServiceBusyException.SERVICE_UNAVAILABLE, nominatimGate.secondsUntilFree(),
+                    "Nominatim one-per-second slot too far off");
+        }
         try {
             String url = geocoderProperties.getNominatimBaseUrl()
                     + "?format=jsonv2&limit=" + geocoderProperties.getNominatimLimit()

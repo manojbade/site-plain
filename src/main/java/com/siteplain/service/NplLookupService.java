@@ -16,9 +16,11 @@ import org.springframework.stereotype.Service;
 public class NplLookupService {
 
     private final JdbcTemplate jdbcTemplate;
+    private final Bulkhead proximityQuery;
 
-    public NplLookupService(JdbcTemplate jdbcTemplate) {
+    public NplLookupService(JdbcTemplate jdbcTemplate, WorkLimits workLimits) {
         this.jdbcTemplate = jdbcTemplate;
+        this.proximityQuery = workLimits.proximityQuery();
     }
 
     /** 3 miles, the lookup radius. */
@@ -92,11 +94,12 @@ public class NplLookupService {
         }
         sql.append(EXACT_DISTANCE_FILTER);
         args.addAll(List.of(lng, lat, RADIUS_METERS));
-        List<NplSite> sites = jdbcTemplate.query(sql.toString(), (rs, rowNum) -> {
+        // Capped globally, so a flood of lookups cannot take every database connection.
+        List<NplSite> sites = proximityQuery.call(() -> jdbcTemplate.query(sql.toString(), (rs, rowNum) -> {
             NplSite site = mapSite(rs);
             site.setDistanceMeters(rs.getDouble("distance_meters"));
             return site;
-        }, args.toArray());
+        }, args.toArray()));
         Double nearestMiles = sites.isEmpty() ? null : sites.getFirst().getDistanceMeters() / 1609.344;
         return new NplLookupResult(address, sites, nearestMiles, false);
     }

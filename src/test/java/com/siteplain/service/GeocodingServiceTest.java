@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 class GeocodingServiceTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final GeocodingService service = new GeocodingService(null, objectMapper, new GeocoderProperties());
+    private final GeocodingService service = new GeocodingService(null, objectMapper, new GeocoderProperties(), WorkLimits.unlimited());
 
     @Test
     void nominatimHouseMatch_isExactAndTakesStateFromIsoCode() throws Exception {

@@ -1,6 +1,7 @@
 package com.siteplain.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.siteplain.config.GeocoderProperties;
@@ -147,13 +148,46 @@ class GeocodingServiceCacheTest {
     }
 
     @Test
+    void aNominatimSlotTooFarOffIsBusyNotUnresolved() {
+        censusBody = CENSUS_NO_MATCH;
+        nominatimBody = NOMINATIM_MATCH;
+        // The gate's only slot is taken, and callers may not wait at all.
+        NominatimGate gate = new NominatimGate(Duration.ofSeconds(1), Duration.ZERO, System::nanoTime, nanos -> { });
+        assertThat(gate.awaitTurn()).isTrue();
+        WorkLimits limits = new WorkLimits(Bulkhead.unlimited("pdf"), Bulkhead.unlimited("geocoding"),
+                Bulkhead.unlimited("proximity"), gate);
+        GeocodingService service = new GeocodingService(HttpClient.newHttpClient(), new ObjectMapper(), properties, limits, clock);
+
+        assertThatThrownBy(() -> service.geocode("57 Salem Street Woburn"))
+                .isInstanceOfSatisfying(ServiceBusyException.class, busy -> assertThat(busy.status()).isEqualTo(503));
+        assertThat(nominatimCalls).hasValue(0);
+    }
+
+    @Test
+    void outboundCallsAreCappedButCacheHitsAreNot() {
+        Bulkhead geocoding = new Bulkhead("geocoding", 1, Duration.ZERO, 5);
+        WorkLimits limits = new WorkLimits(Bulkhead.unlimited("pdf"), geocoding, Bulkhead.unlimited("proximity"),
+                NominatimGate.realTime(Duration.ZERO, Duration.ZERO));
+        GeocodingService service = new GeocodingService(HttpClient.newHttpClient(), new ObjectMapper(), properties, limits, clock);
+        service.geocode("57 Salem St, Woburn, MA");
+
+        // Hold the only outbound slot: a new address is refused, a cached one is still answered.
+        geocoding.call(() -> {
+            assertThatThrownBy(() -> service.geocode("1 Other St, Woburn, MA")).isInstanceOf(ServiceBusyException.class);
+            assertThat(service.geocode("57 Salem St, Woburn, MA").resolved()).isTrue();
+            return null;
+        });
+        assertThat(censusCalls).hasValue(1);
+    }
+
+    @Test
     void cacheKey_ignoresCaseAndSpacing() {
         assertThat(GeocodingService.cacheKey("  57  Salem St ,Woburn,MA ")).isEqualTo("57 salem st, woburn, ma");
         assertThat(GeocodingService.cacheKey(" ")).isNull();
     }
 
     private GeocodingService service() {
-        return new GeocodingService(HttpClient.newHttpClient(), new ObjectMapper(), properties, clock);
+        return new GeocodingService(HttpClient.newHttpClient(), new ObjectMapper(), properties, WorkLimits.unlimited(), clock);
     }
 
     private static void reply(com.sun.net.httpserver.HttpExchange exchange, int status, String body) throws IOException {
