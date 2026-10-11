@@ -259,6 +259,25 @@ class PageRenderingIntegrationTest {
     }
 
     @Test
+    void epaPathwayText_isEscapedWithOnlyLineBreaksKept() throws Exception {
+        jdbcTemplate.update("UPDATE npl_human_exposure SET humanexposurepathdesc = ? WHERE epa_id = 'OHR000000001'",
+                "Groundwater<br/>Soil <b>vapor</b> & <script>alert(1)</script>");
+        seoPageCacheBuilder.rebuild();
+        String expected = "Groundwater<br/>Soil &lt;b&gt;vapor&lt;/b&gt; &amp; &lt;script&gt;alert(1)&lt;/script&gt;";
+
+        String site = page(get("/site/OHR000000001"), 200);
+        assertThat(site).contains("<p class=\"sp-epa-text mb-0\">" + expected + "</p>")
+                .doesNotContain("<script>alert(1)")
+                .doesNotContain("<b>vapor");
+
+        String results = page(get("/results").param("lat", "39.825").param("lng", "-84.055")
+                .param("address", "1 Main St, Dayton, OH").param("state", "OH"), 200);
+        assertThat(results).contains("<span>" + expected + "</span>")
+                .doesNotContain("<script>alert(1)")
+                .doesNotContain("<b>vapor");
+    }
+
+    @Test
     void statePage_metaDescriptionNamesState() throws Exception {
         String html = mockMvc.perform(get("/state/OH"))
                 .andExpect(status().isOk())

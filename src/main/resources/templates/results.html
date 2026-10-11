@@ -101,7 +101,7 @@
               <p class="mb-2"><span th:replace="~{fragments/exposure-badge :: badge(${site.exposureStatusCode}, ${site.exposureStatusLabel})}"></span></p>
               <p class="tt-muted-copy mb-2" th:if="${site.exposurePathwayDescription != null and !#strings.isEmpty(site.exposurePathwayDescription)}">
                 About this site's exposure pathways:
-                <span th:utext="${site.exposurePathwayDescription}">EPA text</span>
+                <span><th:block th:each="line, it : ${site.exposurePathwayLines()}"><br th:unless="${it.first}"/><th:block th:text="${line}">EPA text</th:block></th:block></span>
               </p>
               <p class="sp-site-links mb-0">
                 <a th:href="${site.effectiveEpaUrl()}" target="_blank" rel="noopener">View EPA site profile</a>

@@ -63,14 +63,34 @@ class ResultsPdfServiceTest {
                 .doesNotContain("\u2014");
     }
 
+    @Test
+    void pdfTemplate_escapesEpaPathwayTextAndKeepsOnlyLineBreaks() {
+        NplSite site = sampleSite();
+        site.setExposurePathwayDescription("Groundwater<br/>Soil <b>vapor</b> & <img src=x onerror=alert(1)>");
+        Context context = new Context(Locale.US);
+        context.setVariable("viewModel", viewModel(null, site));
+        String html = templateEngine().process("results-pdf", context);
+
+        assertThat(html).contains("<span>Groundwater<br/>Soil &lt;b&gt;vapor&lt;/b&gt; &amp; &lt;img src=x onerror=alert(1)&gt;</span>")
+                .doesNotContain("<b>vapor")
+                .doesNotContain("<img");
+        // The escaped text still renders as a PDF.
+        assertThat(new ResultsPdfService(templateEngine(), siteProperties()).generateResultsPdf(viewModel(null, site)))
+                .startsWith("%PDF-".getBytes(StandardCharsets.ISO_8859_1));
+    }
+
     private static ResultsViewModel viewModel(String approximateMatch) {
+        return viewModel(approximateMatch, sampleSite());
+    }
+
+    private static ResultsViewModel viewModel(String approximateMatch, NplSite site) {
         return new ResultsViewModel(
                 "57 Salem Street, Woburn, MA 01801",
                 "57 Salem Street, Woburn, MA 01801",
                 false,
                 true,
                 1,
-                List.of(sampleSite()),
+                List.of(site),
                 null,
                 "MA",
                 42.48,

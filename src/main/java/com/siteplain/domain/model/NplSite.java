@@ -1,6 +1,8 @@
 package com.siteplain.domain.model;
 
+import com.siteplain.support.EpaText;
 import com.siteplain.support.EpaUrls;
+import java.util.List;
 
 public class NplSite {
 
@@ -93,6 +95,11 @@ public class NplSite {
 
     public void setExposurePathwayDescription(String exposurePathwayDescription) {
         this.exposurePathwayDescription = exposurePathwayDescription;
+    }
+
+    /** The pathway description split at its line breaks, for escaped rendering (see EpaText). */
+    public List<String> exposurePathwayLines() {
+        return EpaText.lines(exposurePathwayDescription);
     }
 
     public String effectiveEpaUrl() {
